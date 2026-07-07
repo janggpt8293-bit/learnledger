@@ -1,4 +1,3 @@
-import { MemberProvider } from '@/integrations';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom';
 import { ScrollToTop } from '@/lib/scroll-to-top';
 import ErrorPage from '@/integrations/errorHandlers/ErrorPage';
@@ -30,23 +29,14 @@ const router = createBrowserRouter([
       {
         index: true,
         element: <HomePage />,
-        routeMetadata: {
-          pageIdentifier: 'home',
-        },
       },
       {
         path: "writing",
         element: <WritingPage />,
-        routeMetadata: {
-          pageIdentifier: 'writing',
-        },
       },
       {
         path: "writing/:slug",
         element: <ArticleDetailPage />,
-        routeMetadata: {
-          pageIdentifier: 'article-detail',
-        },
       },
       {
         // Blog was a duplicate listing of the same articles collection as
@@ -57,30 +47,18 @@ const router = createBrowserRouter([
       {
         path: "about",
         element: <AboutPage />,
-        routeMetadata: {
-          pageIdentifier: 'about',
-        },
       },
       {
         path: "projects",
         element: <ProjectsPage />,
-        routeMetadata: {
-          pageIdentifier: 'projects',
-        },
       },
       {
         path: "projects/:id",
         element: <ProjectDetailPage />,
-        routeMetadata: {
-          pageIdentifier: 'project-detail',
-        },
       },
       {
         path: aiEnglishWeaknessArticle.path.slice(1),
         element: <ArticlePage />,
-        routeMetadata: {
-          pageIdentifier: 'article',
-        },
       },
       {
         // old URL for the same article — redirect to the canonical one
@@ -93,14 +71,8 @@ const router = createBrowserRouter([
       },
     ],
   },
-], {
-  basename: import.meta.env.BASE_NAME,
-});
+]);
 
 export default function AppRouter() {
-  return (
-    <MemberProvider>
-      <RouterProvider router={router} />
-    </MemberProvider>
-  );
+  return <RouterProvider router={router} />;
 }

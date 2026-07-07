@@ -1,6 +1,4 @@
 ---
-import { SEO } from '@wix/seo/components';
-import { loadSEOTagsServiceConfig } from '@wix/seo/services';
 import { Head } from "@/components/Head";
 import AppRouter from "@/components/Router";
 import { BaseCrudService } from "@/integrations";
@@ -8,14 +6,13 @@ import type { Articles, Projects } from "@/entities";
 import { aiEnglishWeaknessArticle as staticArticle } from "@/data/ai-english-weakness-article";
 import {
   SITE_NAME,
+  AUTHOR_BIO,
   buildArticleLd,
   buildBreadcrumbLd,
   buildFaqLd,
   buildPersonLd,
   buildWebsiteLd,
 } from "@/lib/structured-data";
-import "@wix/wix-vibe-plugins/plugins-vars.css";
-import "@wix/wix-vibe-plugins/plugins-theme.css";
 import "@/styles/global.css";
 
 const path = Astro.url.pathname.replace(/\/+$/, "") || "/";
@@ -80,15 +77,21 @@ try {
 // --- Per-route SEO page name + JSON-LD (rendered server-side, always crawlable) ---
 const siteUrl = Astro.url.origin;
 const canonicalUrl = Astro.url.href;
+const DEFAULT_DESCRIPTION =
+  'Learning in public. Building with data. Thinking through systems. Documenting a long-term journey into AI and analytics.';
 let pageName = SITE_NAME;
+let metaDescription: string = DEFAULT_DESCRIPTION;
+let ogImage: string | undefined;
 const jsonLd: Record<string, unknown>[] = [buildWebsiteLd(siteUrl)];
 
 if (isHome) {
   pageName = `${SITE_NAME} — Learning in Public`;
 } else if (isWriting) {
   pageName = `Writing | ${SITE_NAME}`;
+  metaDescription = 'Thoughts on AI and analytics. Documenting the journey of continuous learning.';
 } else if (isArticleDetail && articleDetail) {
   pageName = articleDetail.articleTitle || `Article | ${SITE_NAME}`;
+  metaDescription = articleDetail.metaDescription || articleDetail.shortDescription || DEFAULT_DESCRIPTION;
   jsonLd.push(
     buildArticleLd({
       url: canonicalUrl,
@@ -106,11 +109,15 @@ if (isHome) {
   );
 } else if (isAbout) {
   pageName = `About | ${SITE_NAME}`;
+  metaDescription = AUTHOR_BIO;
   jsonLd.push(buildPersonLd(siteUrl));
 } else if (isProjects) {
   pageName = `Projects | ${SITE_NAME}`;
+  metaDescription = 'Building practical tools and applications to apply learning in real-world scenarios.';
 } else if (isProjectDetail && projectDetail) {
   pageName = projectDetail.projectName || `Project | ${SITE_NAME}`;
+  metaDescription = projectDetail.shortDescription || DEFAULT_DESCRIPTION;
+  ogImage = projectDetail.mainImage;
   jsonLd.push(
     buildBreadcrumbLd([
       { name: "Home", url: siteUrl },
@@ -120,6 +127,8 @@ if (isHome) {
   );
 } else if (isStaticArticle) {
   pageName = staticArticle.title;
+  metaDescription = staticArticle.metaDescription;
+  ogImage = staticArticle.image;
   jsonLd.push(
     buildArticleLd({
       url: canonicalUrl,
@@ -139,19 +148,24 @@ if (isHome) {
     ])
   );
 }
-
-const seoTagsServiceConfig = await loadSEOTagsServiceConfig({
-  pageUrl: Astro.url.href,
-  itemData: {
-    pageName,
-  },
-});
 ---
 
 <html lang="en" class="w-full h-full">
   <head>
     <Head />
-    <SEO.Tags seoTagsServiceConfig={seoTagsServiceConfig} slot="seo-tags" />
+    <title>{pageName}</title>
+    <meta name="description" content={metaDescription} />
+    <link rel="canonical" href={canonicalUrl} />
+    <meta property="og:type" content={isArticleDetail || isStaticArticle ? "article" : "website"} />
+    <meta property="og:site_name" content={SITE_NAME} />
+    <meta property="og:title" content={pageName} />
+    <meta property="og:description" content={metaDescription} />
+    <meta property="og:url" content={canonicalUrl} />
+    {ogImage && <meta property="og:image" content={ogImage} />}
+    <meta name="twitter:card" content={ogImage ? "summary_large_image" : "summary"} />
+    <meta name="twitter:title" content={pageName} />
+    <meta name="twitter:description" content={metaDescription} />
+    {ogImage && <meta name="twitter:image" content={ogImage} />}
     {jsonLd.map((entry) => (
       <script type="application/ld+json" set:html={JSON.stringify(entry)} />
     ))}

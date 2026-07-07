@@ -1,4 +1,4 @@
-import { items } from "@wix/data";
+import { wixClient } from "../wixClient";
 import { WixDataItem } from ".";
 
 /**
@@ -64,7 +64,7 @@ export class BaseCrudService {
     for (const refField of multiRefs) {
       try {
         // Fetch up to 1000 referenced items with total count
-        const result = await items.queryReferenced(collectionId, item._id, refField, {
+        const result = await wixClient.items.queryReferenced(collectionId, item._id, refField, {
           limit: 1000,
           returnTotalCount: true
         });
@@ -95,12 +95,12 @@ export class BaseCrudService {
     multiReferences?: Record<string, any>
   ): Promise<T> {
     try {
-      const result = (await items.insert(collectionId, itemData as Record<string, unknown>)) as T;
+      const result = (await wixClient.items.insert(collectionId, itemData as Record<string, unknown>)) as T;
 
       if (multiReferences && Object.keys(multiReferences).length > 0 && result._id) {
         for (const [propertyName, refIds] of Object.entries(multiReferences)) {
           if (Array.isArray(refIds) && refIds.length > 0) {
-            await items.insertReference(collectionId, propertyName, result._id, refIds as string[]);
+            await wixClient.items.insertReference(collectionId, propertyName, result._id, refIds as string[]);
           }
         }
       }
@@ -133,7 +133,7 @@ export class BaseCrudService {
         ? includeRefs
         : [...(includeRefs?.singleRef || []), ...(includeRefs?.multiRef || [])];
 
-      let query = items.query(collectionId);
+      let query = wixClient.items.query(collectionId);
       if (allRefs.length > 0) {
         query = query.include(...allRefs);
       }
@@ -173,7 +173,7 @@ export class BaseCrudService {
       const singleRefs = isLegacyFormat ? includeRefs : (includeRefs?.singleRef || []);
       const multiRefs = isLegacyFormat ? [] : (includeRefs?.multiRef || []);
 
-      let query = items.query(collectionId).eq("_id", itemId);
+      let query = wixClient.items.query(collectionId).eq("_id", itemId);
       if (singleRefs.length > 0) {
         query = query.include(...singleRefs);
       }
@@ -206,7 +206,7 @@ export class BaseCrudService {
       const singleRefs = isLegacyFormat ? includeRefs : (includeRefs?.singleRef || []);
       const multiRefs = isLegacyFormat ? [] : (includeRefs?.multiRef || []);
 
-      let query = items.query(collectionId).eq(fieldName, fieldValue);
+      let query = wixClient.items.query(collectionId).eq(fieldName, fieldValue);
       if (singleRefs.length > 0) {
         query = query.include(...singleRefs);
       }
@@ -238,7 +238,7 @@ export class BaseCrudService {
 
       const mergedData = { ...currentItem, ...itemData };
 
-      const result = await items.update(collectionId, mergedData);
+      const result = await wixClient.items.update(collectionId, mergedData);
       return result as T;
     } catch (error) {
       console.error(`Error updating ${collectionId}:`, error);
@@ -259,7 +259,7 @@ export class BaseCrudService {
         throw new Error(`${collectionId} ID is required for deletion`);
       }
 
-      const result = await items.remove(collectionId, itemId);
+      const result = await wixClient.items.remove(collectionId, itemId);
       return result as T;
     } catch (error) {
       console.error(`Error deleting ${collectionId}:`, error);
@@ -283,7 +283,7 @@ export class BaseCrudService {
     try {
       for (const [fieldName, refIds] of Object.entries(references)) {
         if (refIds.length > 0) {
-          await items.insertReference(collectionId, fieldName, itemId, refIds);
+          await wixClient.items.insertReference(collectionId, fieldName, itemId, refIds);
         }
       }
     } catch (error) {
@@ -308,7 +308,7 @@ export class BaseCrudService {
     try {
       for (const [fieldName, refIds] of Object.entries(references)) {
         if (refIds.length > 0) {
-          await items.removeReference(collectionId, fieldName, itemId, refIds);
+          await wixClient.items.removeReference(collectionId, fieldName, itemId, refIds);
         }
       }
     } catch (error) {
