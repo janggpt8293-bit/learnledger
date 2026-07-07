@@ -1,0 +1,336 @@
+---
+import { SEO } from '@wix/seo/components';
+import { loadSEOTagsServiceConfig } from '@wix/seo/services';
+import { Head } from "@/components/Head";
+import AppRouter from "@/components/Router";
+import { BaseCrudService } from "@/integrations";
+import type { Articles, Projects } from "@/entities";
+import { aiEnglishWeaknessArticle as staticArticle } from "@/data/ai-english-weakness-article";
+import {
+  SITE_NAME,
+  buildArticleLd,
+  buildBreadcrumbLd,
+  buildFaqLd,
+  buildPersonLd,
+  buildWebsiteLd,
+} from "@/lib/structured-data";
+import "@wix/wix-vibe-plugins/plugins-vars.css";
+import "@wix/wix-vibe-plugins/plugins-theme.css";
+import "@/styles/global.css";
+
+const path = Astro.url.pathname.replace(/\/+$/, "") || "/";
+const segments = path.split("/").filter(Boolean);
+
+// --- Consolidate duplicate/legacy URLs with real HTTP redirects (not client-side JS) ---
+if (path === "/blog") {
+  return Astro.redirect("/writing", 301);
+}
+if (path === "/article/ai-exposed-biggest-english-weakness") {
+  return Astro.redirect(staticArticle.path, 301);
+}
+
+const isHome = path === "/";
+const isWriting = path === "/writing";
+const isArticleDetail = segments[0] === "writing" && segments.length === 2;
+const isAbout = path === "/about";
+const isProjects = path === "/projects";
+const isProjectDetail = segments[0] === "projects" && segments.length === 2;
+const isStaticArticle = path === staticArticle.path;
+
+// --- Server-side data fetch (same collections/sorting as the matching React page) ---
+let featuredArticles: Articles[] = [];
+let writingArticles: Articles[] = [];
+let articleDetail: Articles | null = null;
+let projectsList: Projects[] = [];
+let projectDetail: Projects | null = null;
+
+try {
+  if (isHome || isWriting) {
+    const result = await BaseCrudService.getAll<Articles>("articles", undefined, { limit: 100 });
+    const sorted = result.items.sort((a, b) => {
+      const dateA = a.publishDate ? new Date(a.publishDate).getTime() : 0;
+      const dateB = b.publishDate ? new Date(b.publishDate).getTime() : 0;
+      return dateB - dateA;
+    });
+    if (isHome) {
+      featuredArticles = sorted.filter((article) => article.isFeatured).slice(0, 3);
+      if (featuredArticles.length === 0) featuredArticles = sorted.slice(0, 3);
+    } else {
+      writingArticles = sorted;
+    }
+  } else if (isArticleDetail) {
+    const slug = segments[1];
+    articleDetail =
+      (await BaseCrudService.getByField<Articles>("articles", "slug", slug)) ??
+      (await BaseCrudService.getById<Articles>("articles", slug));
+  } else if (isProjects) {
+    const result = await BaseCrudService.getAll<Projects>("projects", undefined, { limit: 100 });
+    projectsList = result.items.sort((a, b) => {
+      const dateA = a.completionDate ? new Date(a.completionDate).getTime() : 0;
+      const dateB = b.completionDate ? new Date(b.completionDate).getTime() : 0;
+      return dateB - dateA;
+    });
+  } else if (isProjectDetail) {
+    projectDetail = await BaseCrudService.getById<Projects>("projects", segments[1]);
+  }
+} catch (error) {
+  console.error("Error fetching content for", path, error);
+}
+
+// --- Per-route SEO page name + JSON-LD (rendered server-side, always crawlable) ---
+const siteUrl = Astro.url.origin;
+const canonicalUrl = Astro.url.href;
+let pageName = SITE_NAME;
+const jsonLd: Record<string, unknown>[] = [buildWebsiteLd(siteUrl)];
+
+if (isHome) {
+  pageName = `${SITE_NAME} — Learning in Public`;
+} else if (isWriting) {
+  pageName = `Writing | ${SITE_NAME}`;
+} else if (isArticleDetail && articleDetail) {
+  pageName = articleDetail.articleTitle || `Article | ${SITE_NAME}`;
+  jsonLd.push(
+    buildArticleLd({
+      url: canonicalUrl,
+      headline: articleDetail.articleTitle || pageName,
+      description: articleDetail.metaDescription || articleDetail.shortDescription,
+      datePublished: articleDetail.publishDate ? new Date(articleDetail.publishDate).toISOString() : undefined,
+    })
+  );
+  jsonLd.push(
+    buildBreadcrumbLd([
+      { name: "Home", url: siteUrl },
+      { name: "Writing", url: `${siteUrl}/writing` },
+      { name: articleDetail.articleTitle || "Article", url: canonicalUrl },
+    ])
+  );
+} else if (isAbout) {
+  pageName = `About | ${SITE_NAME}`;
+  jsonLd.push(buildPersonLd(siteUrl));
+} else if (isProjects) {
+  pageName = `Projects | ${SITE_NAME}`;
+} else if (isProjectDetail && projectDetail) {
+  pageName = projectDetail.projectName || `Project | ${SITE_NAME}`;
+  jsonLd.push(
+    buildBreadcrumbLd([
+      { name: "Home", url: siteUrl },
+      { name: "Projects", url: `${siteUrl}/projects` },
+      { name: projectDetail.projectName || "Project", url: canonicalUrl },
+    ])
+  );
+} else if (isStaticArticle) {
+  pageName = staticArticle.title;
+  jsonLd.push(
+    buildArticleLd({
+      url: canonicalUrl,
+      headline: staticArticle.title,
+      description: staticArticle.metaDescription,
+      image: staticArticle.image,
+      datePublished: staticArticle.datePublished,
+      authorName: staticArticle.author,
+    })
+  );
+  jsonLd.push(buildFaqLd(staticArticle.faqItems));
+  jsonLd.push(
+    buildBreadcrumbLd([
+      { name: "Home", url: siteUrl },
+      { name: "Writing", url: `${siteUrl}/writing` },
+      { name: staticArticle.title, url: canonicalUrl },
+    ])
+  );
+}
+
+const seoTagsServiceConfig = await loadSEOTagsServiceConfig({
+  pageUrl: Astro.url.href,
+  itemData: {
+    pageName,
+  },
+});
+---
+
+<html lang="en" class="w-full h-full">
+  <head>
+    <Head />
+    <SEO.Tags seoTagsServiceConfig={seoTagsServiceConfig} slot="seo-tags" />
+    {jsonLd.map((entry) => (
+      <script type="application/ld+json" set:html={JSON.stringify(entry)} />
+    ))}
+  </head>
+  <body class="w-full h-full">
+    <div id="root" class="w-full h-full">
+      <!--
+        Crawlable fallback: the interactive app below mounts with client:only
+        (react-router's createBrowserRouter needs a real browser and can't be
+        server-rendered), so anything that doesn't execute JavaScript — most
+        AI/GEO crawlers included — would otherwise see an empty page. This
+        block renders the same content as plain server-rendered HTML. It's
+        wrapped in <noscript> so JS-enabled visitors never see it; the React
+        app replaces #root's contents on mount either way.
+      -->
+      <noscript>
+        <header>
+          <a href="/">{SITE_NAME}</a>
+          <nav>
+            <a href="/">Home</a>
+            <a href="/writing">Writing</a>
+            <a href="/projects">Projects</a>
+            <a href="/about">About</a>
+          </nav>
+        </header>
+
+        {isHome && (
+          <main>
+            <h1>Learning in public. Building with data. Thinking through systems.</h1>
+            <p>Exploring AI, analytics, and learning systems while documenting the journey publicly.</p>
+            <section>
+              <h2>Featured Writing</h2>
+              {featuredArticles.length > 0 ? (
+                featuredArticles.map((article) => (
+                  <article>
+                    <h3><a href={`/writing/${article.slug || article._id}`}>{article.articleTitle}</a></h3>
+                    <p>{article.shortDescription}</p>
+                  </article>
+                ))
+              ) : (
+                <p>No featured articles yet.</p>
+              )}
+            </section>
+          </main>
+        )}
+
+        {isWriting && (
+          <main>
+            <h1>Writing</h1>
+            <p>Thoughts on AI and analytics. Documenting the journey of continuous learning.</p>
+            {writingArticles.length > 0 ? (
+              writingArticles.map((article) => (
+                <article>
+                  <h2><a href={`/writing/${article.slug || article._id}`}>{article.articleTitle}</a></h2>
+                  {article.topicCategory && <p>{article.topicCategory}</p>}
+                  <p>{article.shortDescription}</p>
+                </article>
+              ))
+            ) : (
+              <p>No articles published yet.</p>
+            )}
+          </main>
+        )}
+
+        {isArticleDetail && (
+          articleDetail ? (
+            <main>
+              <article>
+                {articleDetail.topicCategory && <p>{articleDetail.topicCategory}</p>}
+                <h1>{articleDetail.articleTitle}</h1>
+                {articleDetail.shortDescription && <p>{articleDetail.shortDescription}</p>}
+                <div>{articleDetail.mainContent}</div>
+              </article>
+            </main>
+          ) : (
+            <main>
+              <h1>Article Not Found</h1>
+              <p>The article you're looking for doesn't exist.</p>
+              <a href="/writing">Back to Writing</a>
+            </main>
+          )
+        )}
+
+        {isAbout && (
+          <main>
+            <h1>About</h1>
+            <p>A student on a long-term journey to build expertise in AI, analytics, and analytical thinking.</p>
+            <section>
+              <h2>The Journey</h2>
+              <p>This website exists to document a long-term learning journey. It's not about claiming expertise or selling a product. It's about building skills systematically, thinking deeply, and sharing the process publicly.</p>
+              <p>I'm a student focused on developing capabilities in artificial intelligence and data analytics. The goal is to understand these domains deeply, build practical projects, and document insights along the way.</p>
+            </section>
+            <section>
+              <h2>Guiding Principles</h2>
+              <ul>
+                <li><strong>Learn in Public</strong> — Documenting the journey, sharing insights, and building a body of work that tracks growth over time.</li>
+                <li><strong>Build to Understand</strong> — Creating projects and tools to apply theoretical knowledge in practical, real-world scenarios.</li>
+                <li><strong>Think Through Systems</strong> — Approaching problems analytically, breaking down complexity, and finding patterns across domains.</li>
+                <li><strong>Stay Curious</strong> — Maintaining intellectual curiosity, asking questions, and pursuing understanding beyond surface-level knowledge.</li>
+              </ul>
+            </section>
+          </main>
+        )}
+
+        {isProjects && (
+          <main>
+            <h1>Projects</h1>
+            <p>Building practical tools and applications to apply learning in real-world scenarios.</p>
+            {projectsList.length > 0 ? (
+              projectsList.map((project) => (
+                <article>
+                  <h2><a href={`/projects/${project._id}`}>{project.projectName}</a></h2>
+                  {project.projectStatus && <p>{project.projectStatus}</p>}
+                  <p>{project.shortDescription}</p>
+                </article>
+              ))
+            ) : (
+              <p>No projects yet.</p>
+            )}
+          </main>
+        )}
+
+        {isProjectDetail && (
+          projectDetail ? (
+            <main>
+              <article>
+                {projectDetail.projectStatus && <p>{projectDetail.projectStatus}</p>}
+                <h1>{projectDetail.projectName}</h1>
+                {projectDetail.shortDescription && <p>{projectDetail.shortDescription}</p>}
+                <div>{projectDetail.detailedContent}</div>
+                {projectDetail.projectUrl && <a href={projectDetail.projectUrl}>View Project</a>}
+              </article>
+            </main>
+          ) : (
+            <main>
+              <h1>Project Not Found</h1>
+              <a href="/projects">Back to Projects</a>
+            </main>
+          )
+        )}
+
+        {isStaticArticle && (
+          <main>
+            <article>
+              <p>{staticArticle.category}</p>
+              <h1>{staticArticle.title}</h1>
+              <p>{staticArticle.subheadline}</p>
+              <p>By {staticArticle.author} — <time datetime={staticArticle.datePublished}>{staticArticle.datePublished}</time> — {staticArticle.readingTime}</p>
+
+              {staticArticle.sections.map((section) => (
+                <section>
+                  <h2>{section.title}</h2>
+                  {section.paragraphs.map((paragraph) => (
+                    <p set:html={paragraph} />
+                  ))}
+                  {section.quote && <blockquote>{section.quote}</blockquote>}
+                </section>
+              ))}
+
+              <section>
+                <h2>Frequently Asked Questions</h2>
+                {staticArticle.faqItems.map((item) => (
+                  <div>
+                    <h3>{item.question}</h3>
+                    <p>{item.answer}</p>
+                  </div>
+                ))}
+              </section>
+
+              <p>Written by {staticArticle.author}. {staticArticle.authorBio}</p>
+            </article>
+          </main>
+        )}
+
+        <footer>
+          <p>&copy; {new Date().getFullYear()} {SITE_NAME}. Documenting the journey of continuous learning in AI and analytics.</p>
+        </footer>
+      </noscript>
+      <AppRouter client:only="react" />
+    </div>
+  </body>
+</html>
