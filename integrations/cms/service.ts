@@ -43,6 +43,27 @@ export interface PaginatedResult<T> {
 }
 
 /**
+ * The Wix API key only ever lives in server env vars, so it's never available
+ * when this module runs in the browser (client:only React pages). Browser
+ * callers go through /api/cms instead, which runs the *Direct methods below
+ * on the server and returns the same shapes.
+ */
+async function callCmsApi<T>(action: string, args: unknown[]): Promise<T> {
+  const response = await fetch("/api/cms", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, args }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload?.error || `CMS request failed: ${action}`);
+  }
+  return payload.data as T;
+}
+
+const isBrowser = () => typeof window !== "undefined";
+
+/**
  * Generic CRUD Service class for Wix Data collections
  * Provides type-safe CRUD operations with error handling
  */
@@ -94,6 +115,17 @@ export class BaseCrudService {
     itemData: Partial<T> | Record<string, unknown>,
     multiReferences?: Record<string, any>
   ): Promise<T> {
+    if (isBrowser()) {
+      return callCmsApi<T>("create", [collectionId, itemData, multiReferences]);
+    }
+    return this.createDirect<T>(collectionId, itemData, multiReferences);
+  }
+
+  static async createDirect<T extends WixDataItem>(
+    collectionId: string,
+    itemData: Partial<T> | Record<string, unknown>,
+    multiReferences?: Record<string, any>
+  ): Promise<T> {
     try {
       const result = (await wixClient.items.insert(collectionId, itemData as Record<string, unknown>)) as T;
 
@@ -120,6 +152,17 @@ export class BaseCrudService {
    * @param includeRefs - { singleRef: [...], multiRef: [...] } or string[] for backward compatibility
    */
   static async getAll<T extends WixDataItem>(
+    collectionId: string,
+    includeRefs?: { singleRef?: string[]; multiRef?: string[] } | string[],
+    pagination?: PaginationOptions
+  ): Promise<PaginatedResult<T>> {
+    if (isBrowser()) {
+      return callCmsApi<PaginatedResult<T>>("getAll", [collectionId, includeRefs, pagination]);
+    }
+    return this.getAllDirect<T>(collectionId, includeRefs, pagination);
+  }
+
+  static async getAllDirect<T extends WixDataItem>(
     collectionId: string,
     includeRefs?: { singleRef?: string[]; multiRef?: string[] } | string[],
     pagination?: PaginationOptions
@@ -167,6 +210,17 @@ export class BaseCrudService {
     itemId: string,
     includeRefs?: { singleRef?: string[]; multiRef?: string[] } | string[]
   ): Promise<T | null> {
+    if (isBrowser()) {
+      return callCmsApi<T | null>("getById", [collectionId, itemId, includeRefs]);
+    }
+    return this.getByIdDirect<T>(collectionId, itemId, includeRefs);
+  }
+
+  static async getByIdDirect<T extends WixDataItem>(
+    collectionId: string,
+    itemId: string,
+    includeRefs?: { singleRef?: string[]; multiRef?: string[] } | string[]
+  ): Promise<T | null> {
     try {
       // Support both old format (string[]) and new format ({ singleRef, multiRef })
       const isLegacyFormat = Array.isArray(includeRefs);
@@ -201,6 +255,18 @@ export class BaseCrudService {
     fieldValue: string,
     includeRefs?: { singleRef?: string[]; multiRef?: string[] } | string[]
   ): Promise<T | null> {
+    if (isBrowser()) {
+      return callCmsApi<T | null>("getByField", [collectionId, fieldName, fieldValue, includeRefs]);
+    }
+    return this.getByFieldDirect<T>(collectionId, fieldName, fieldValue, includeRefs);
+  }
+
+  static async getByFieldDirect<T extends WixDataItem>(
+    collectionId: string,
+    fieldName: string,
+    fieldValue: string,
+    includeRefs?: { singleRef?: string[]; multiRef?: string[] } | string[]
+  ): Promise<T | null> {
     try {
       const isLegacyFormat = Array.isArray(includeRefs);
       const singleRefs = isLegacyFormat ? includeRefs : (includeRefs?.singleRef || []);
@@ -229,12 +295,19 @@ export class BaseCrudService {
    * @returns Promise<T> - The updated item
    */
   static async update<T extends WixDataItem>(collectionId: string, itemData: T): Promise<T> {
+    if (isBrowser()) {
+      return callCmsApi<T>("update", [collectionId, itemData]);
+    }
+    return this.updateDirect<T>(collectionId, itemData);
+  }
+
+  static async updateDirect<T extends WixDataItem>(collectionId: string, itemData: T): Promise<T> {
     try {
       if (!itemData._id) {
         throw new Error(`${collectionId} ID is required for update`);
       }
 
-      const currentItem = await this.getById<T>(collectionId, itemData._id);
+      const currentItem = await this.getByIdDirect<T>(collectionId, itemData._id);
 
       const mergedData = { ...currentItem, ...itemData };
 
@@ -254,6 +327,13 @@ export class BaseCrudService {
    * @returns Promise<T> - The deleted item
    */
   static async delete<T extends WixDataItem>(collectionId: string, itemId: string): Promise<T> {
+    if (isBrowser()) {
+      return callCmsApi<T>("delete", [collectionId, itemId]);
+    }
+    return this.deleteDirect<T>(collectionId, itemId);
+  }
+
+  static async deleteDirect<T extends WixDataItem>(collectionId: string, itemId: string): Promise<T> {
     try {
       if (!itemId) {
         throw new Error(`${collectionId} ID is required for deletion`);
@@ -280,6 +360,17 @@ export class BaseCrudService {
     itemId: string,
     references: Record<string, string[]>
   ): Promise<void> {
+    if (isBrowser()) {
+      return callCmsApi<void>("addReferences", [collectionId, itemId, references]);
+    }
+    return this.addReferencesDirect(collectionId, itemId, references);
+  }
+
+  static async addReferencesDirect(
+    collectionId: string,
+    itemId: string,
+    references: Record<string, string[]>
+  ): Promise<void> {
     try {
       for (const [fieldName, refIds] of Object.entries(references)) {
         if (refIds.length > 0) {
@@ -301,6 +392,17 @@ export class BaseCrudService {
    * @param references - Record of field names to arrays of reference IDs to remove
    */
   static async removeReferences(
+    collectionId: string,
+    itemId: string,
+    references: Record<string, string[]>
+  ): Promise<void> {
+    if (isBrowser()) {
+      return callCmsApi<void>("removeReferences", [collectionId, itemId, references]);
+    }
+    return this.removeReferencesDirect(collectionId, itemId, references);
+  }
+
+  static async removeReferencesDirect(
     collectionId: string,
     itemId: string,
     references: Record<string, string[]>
