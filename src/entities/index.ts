@@ -29,6 +29,8 @@ export interface Articles {
   slug?: string;
   /** @wixFieldType text */
   shortDescription?: string;
+  /** @wixFieldType url */
+  videoUrl?: string;
 }
 
 

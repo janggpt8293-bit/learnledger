@@ -7,8 +7,14 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { YouTubeEmbed } from '@/components/ui/youtube-embed';
 import { ArrowLeft } from 'lucide-react';
 import { format } from 'date-fns';
+
+// Temporary fallback until every article has been given a videoUrl in the CMS.
+const FALLBACK_VIDEO_URLS: Record<string, string> = {
+  'how-ai-exposed-my-biggest-english-weakness': 'https://www.youtube.com/shorts/MHbe__LEz8U',
+};
 
 export default function ArticleDetailPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -91,6 +97,13 @@ export default function ArticleDetailPage() {
                   {article.shortDescription}
                 </p>
               )}
+
+              {(() => {
+                const videoUrl = article.videoUrl || (article.slug && FALLBACK_VIDEO_URLS[article.slug]);
+                return videoUrl ? (
+                  <YouTubeEmbed url={videoUrl} title={article.articleTitle || 'Article video'} />
+                ) : null;
+              })()}
 
               <div className="border-t border-border pt-12">
                 <div className="font-paragraph text-base text-foreground leading-relaxed whitespace-pre-wrap">
