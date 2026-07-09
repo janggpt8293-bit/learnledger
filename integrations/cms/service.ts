@@ -278,9 +278,20 @@ export class BaseCrudService {
       }
 
       const result = await query.find();
-      if (result.items.length === 0) return null;
+      if (result.items.length > 0) {
+        return this.populateMultiRefs<T>(collectionId, result.items[0] as T, multiRefs);
+      }
 
-      return this.populateMultiRefs<T>(collectionId, result.items[0] as T, multiRefs);
+      // Wix Data does exact string matching, so stray whitespace in the stored
+      // value (e.g. a trailing newline pasted from a rich text editor) silently
+      // breaks the lookup above. Fall back to a trimmed scan before giving up.
+      const all = await wixClient.items.query(collectionId).limit(1000).find();
+      const trimmedMatch = all.items.find(
+        (item: any) => typeof item[fieldName] === "string" && item[fieldName].trim() === fieldValue.trim()
+      );
+      if (!trimmedMatch) return null;
+
+      return this.populateMultiRefs<T>(collectionId, trimmedMatch as T, multiRefs);
     } catch (error) {
       console.error(`Error fetching ${collectionId} by ${fieldName}:`, error);
       throw new Error(
