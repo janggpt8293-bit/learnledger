@@ -5,7 +5,7 @@ import { WixDataItem } from ".";
  * Pagination options for querying collections
  */
 export interface PaginationOptions {
-  /** Number of items per page (default: 50, max: 1000) */
+  /** Number of items per page (default: 100, max: 1000) */
   limit?: number;
   /** Number of items to skip (for offset-based pagination) */
   skip?: number;
@@ -148,7 +148,7 @@ export class BaseCrudService {
   }
 
   /**
-   * Retrieves items from the collection with pagination (default: 50 per page)
+   * Retrieves items from the collection with pagination (default: 100 per page)
    * @param includeRefs - { singleRef: [...], multiRef: [...] } or string[] for backward compatibility
    */
   static async getAll<T extends WixDataItem>(
@@ -168,7 +168,7 @@ export class BaseCrudService {
     pagination?: PaginationOptions
   ): Promise<PaginatedResult<T>> {
     try {
-      const limit = Math.min(pagination?.limit ?? 50, 1000);
+      const limit = Math.min(pagination?.limit ?? 100, 1000);
       const skip = pagination?.skip ?? 0;
 
       // Support both old format (string[]) and new format ({ singleRef, multiRef })
