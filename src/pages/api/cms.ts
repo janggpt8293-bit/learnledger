@@ -18,11 +18,15 @@ const ACTIONS: Record<string, (args: any[]) => Promise<unknown>> = {
 };
 
 export const POST: APIRoute = async ({ request }) => {
+  let action: string | undefined;
   try {
-    const { action, args } = (await request.json()) as { action?: string; args?: unknown[] };
+    const body = (await request.json()) as { action?: string; args?: unknown[] };
+    action = body.action;
+    const args = body.args;
     const handler = action ? ACTIONS[action] : undefined;
 
     if (!handler) {
+      console.error(`[api/cms] Unknown action requested: ${action}`);
       return new Response(JSON.stringify({ error: `Unknown CMS action: ${action}` }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -30,11 +34,15 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const data = await handler(args ?? []);
+    if (data === undefined || data === null) {
+      console.error(`[api/cms] action "${action}" resolved with no data`, { args });
+    }
     return new Response(JSON.stringify({ data: data ?? null }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
+    console.error(`[api/cms] action "${action}" threw:`, error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "CMS request failed" }),
       { status: 500, headers: { "Content-Type": "application/json" } }
