@@ -75,10 +75,13 @@ try {
 }
 
 // --- Per-route SEO page name + JSON-LD (rendered server-side, always crawlable) ---
-const siteUrl = Astro.url.origin;
-const canonicalUrl = Astro.url.href;
+// Astro.url.origin can't be trusted here — Vercel's serverless runtime resolves it
+// to "https://localhost" instead of the real request host. Astro.site (configured in
+// astro.config.mjs from Vercel's own env vars) is the reliable source of truth instead.
+const siteUrl = Astro.site ? Astro.site.origin : Astro.url.origin;
+const canonicalUrl = new URL(Astro.url.pathname + Astro.url.search, siteUrl).href;
 const DEFAULT_DESCRIPTION =
-  'Learning in public. Building with data. Thinking through systems. Documenting a long-term journey into AI and analytics.';
+  'One person\'s real journey using AI to learn faster, write better, and build skills in a second language — documented in public, article by article.';
 let pageName = SITE_NAME;
 let metaDescription: string = DEFAULT_DESCRIPTION;
 let ogImage: string | undefined;

@@ -1,3 +1,5 @@
+import { SITE_NAME } from '@/lib/structured-data';
+
 export default function Footer() {
   const currentYear = new Date().getFullYear();
 
@@ -7,7 +9,7 @@ export default function Footer() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
           <div>
             <h3 className="font-heading text-xl font-bold text-foreground mb-2">
-              Learning Lab
+              {SITE_NAME}
             </h3>
             <p className="font-paragraph text-sm text-secondary max-w-md">
               Documenting the journey of continuous learning in AI and analytics.
@@ -16,7 +18,7 @@ export default function Footer() {
           
           <div className="flex flex-col items-start md:items-end gap-2">
             <p className="font-paragraph text-sm text-secondary">
-              © {currentYear} Learning Lab. All rights reserved.
+              © {currentYear} {SITE_NAME}. All rights reserved.
             </p>
             <p className="font-paragraph text-xs text-muted-foreground">
               Built with curiosity and discipline.

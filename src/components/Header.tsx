@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
+import { SITE_NAME } from '@/lib/structured-data';
 
 export default function Header() {
   const location = useLocation();
@@ -25,7 +26,7 @@ export default function Header() {
       <div className="max-w-[100rem] mx-auto px-8 py-6">
         <div className="flex justify-between items-center">
           <Link to="/" className="font-heading text-2xl font-bold text-foreground">
-            Learning Lab
+            {SITE_NAME}
           </Link>
 
           {/* Desktop Navigation */}

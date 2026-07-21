@@ -4,7 +4,7 @@
  * in <head>, where they're crawlable regardless of client-side rendering.
  */
 
-export const SITE_NAME = 'Learning Lab';
+export const SITE_NAME = 'LearnLedger';
 export const AUTHOR_NAME = 'Jinwon Jang';
 export const AUTHOR_BIO =
   'Student, self-learner, and builder documenting experiments in AI, analytics, language learning, and deliberate practice.';

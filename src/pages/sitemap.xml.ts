@@ -9,8 +9,10 @@ function urlEntry(loc: string, lastmod?: string) {
   return `  <url>\n    <loc>${loc}</loc>\n${lastmod ? `    <lastmod>${lastmod}</lastmod>\n` : ""}  </url>`;
 }
 
-export const GET: APIRoute = async ({ url }) => {
-  const siteUrl = url.origin;
+export const GET: APIRoute = async ({ url, site }) => {
+  // Same fix as [...slug].astro: url.origin resolves to "https://localhost" on
+  // Vercel's serverless runtime, so prefer the configured `site` origin instead.
+  const siteUrl = site ? site.origin : url.origin;
   const entries = STATIC_ROUTES.map((route) => urlEntry(`${siteUrl}${route}`));
 
   try {
