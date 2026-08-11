@@ -10,7 +10,7 @@ export default function Header() {
   const navLinks = [
     { path: '/', label: 'Home' },
     { path: '/writing', label: 'Writing' },
-    { path: '/projects', label: 'Projects' },
+    { path: '/essays', label: 'Culture Notes' },
     { path: '/about', label: 'About' }
   ];
 

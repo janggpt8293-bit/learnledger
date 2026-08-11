@@ -5,14 +5,11 @@ import { Card } from '@/components/ui/card';
 
 export default function AboutPage() {
   const skills = [
-    'AI & Machine Learning',
-    'Data Analytics',
-    'Statistics',
-    'Python',
-    'Data Visualization',
-    'Analytical Thinking',
-    'Lifelong Learning',
-    'Systems Thinking'
+    'AI & Prompt Engineering',
+    'ESL & Language Learning',
+    'Writing & Storytelling',
+    'Cross-Cultural Perspective',
+    'Lifelong Curiosity'
   ];
 
   const principles = [
@@ -79,7 +76,7 @@ export default function AboutPage() {
             <h2 className="font-heading text-3xl md:text-4xl font-semibold text-foreground mb-8">
               Areas of Focus
             </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 max-w-5xl">
               {skills.map((skill, index) => (
                 <motion.div
                   key={index}

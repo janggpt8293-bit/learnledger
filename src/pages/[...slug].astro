@@ -2,7 +2,7 @@
 import { Head } from "@/components/Head";
 import AppRouter from "@/components/Router";
 import { BaseCrudService } from "@/integrations";
-import type { Articles, Projects } from "@/entities";
+import type { Articles } from "@/entities";
 import { aiEnglishWeaknessArticle as staticArticle } from "@/data/ai-english-weakness-article";
 import {
   SITE_NAME,
@@ -29,20 +29,20 @@ if (path === "/article/ai-exposed-biggest-english-weakness") {
 const isHome = path === "/";
 const isWriting = path === "/writing";
 const isArticleDetail = segments[0] === "writing" && segments.length === 2;
+const isEssays = path === "/essays";
+const isEssayDetail = segments[0] === "essays" && segments.length === 2;
 const isAbout = path === "/about";
-const isProjects = path === "/projects";
-const isProjectDetail = segments[0] === "projects" && segments.length === 2;
 const isStaticArticle = path === staticArticle.path;
 
 // --- Server-side data fetch (same collections/sorting as the matching React page) ---
 let featuredArticles: Articles[] = [];
 let writingArticles: Articles[] = [];
 let articleDetail: Articles | null = null;
-let projectsList: Projects[] = [];
-let projectDetail: Projects | null = null;
+let essaysList: Articles[] = [];
+let essayDetail: Articles | null = null;
 
 try {
-  if (isHome || isWriting) {
+  if (isHome || isWriting || isEssays) {
     const result = await BaseCrudService.getAll<Articles>("articles", undefined, { limit: 100 });
     const sorted = result.items.sort((a, b) => {
       const dateA = a.publishDate ? new Date(a.publishDate).getTime() : 0;
@@ -52,23 +52,21 @@ try {
     if (isHome) {
       featuredArticles = sorted.filter((article) => article.isFeatured).slice(0, 3);
       if (featuredArticles.length === 0) featuredArticles = sorted.slice(0, 3);
+    } else if (isWriting) {
+      writingArticles = sorted.filter((article) => article.contentType === "article");
     } else {
-      writingArticles = sorted;
+      essaysList = sorted.filter((article) => article.contentType === "essay");
     }
-  } else if (isArticleDetail) {
+  } else if (isArticleDetail || isEssayDetail) {
     const slug = segments[1];
-    articleDetail =
+    const detail =
       (await BaseCrudService.getByField<Articles>("articles", "slug", slug)) ??
       (await BaseCrudService.getById<Articles>("articles", slug));
-  } else if (isProjects) {
-    const result = await BaseCrudService.getAll<Projects>("projects", undefined, { limit: 100 });
-    projectsList = result.items.sort((a, b) => {
-      const dateA = a.completionDate ? new Date(a.completionDate).getTime() : 0;
-      const dateB = b.completionDate ? new Date(b.completionDate).getTime() : 0;
-      return dateB - dateA;
-    });
-  } else if (isProjectDetail) {
-    projectDetail = await BaseCrudService.getById<Projects>("projects", segments[1]);
+    if (isArticleDetail) {
+      articleDetail = detail;
+    } else {
+      essayDetail = detail;
+    }
   }
 } catch (error) {
   console.error("Error fetching content for", path, error);
@@ -110,24 +108,31 @@ if (isHome) {
       { name: articleDetail.articleTitle || "Article", url: canonicalUrl },
     ])
   );
+} else if (isEssays) {
+  pageName = `Culture Notes | ${SITE_NAME}`;
+  metaDescription = 'Reflective essays on movies and media, viewed through a cultural and ESL lens.';
+} else if (isEssayDetail && essayDetail) {
+  pageName = essayDetail.articleTitle || `Essay | ${SITE_NAME}`;
+  metaDescription = essayDetail.metaDescription || essayDetail.shortDescription || DEFAULT_DESCRIPTION;
+  jsonLd.push(
+    buildArticleLd({
+      url: canonicalUrl,
+      headline: essayDetail.articleTitle || pageName,
+      description: essayDetail.metaDescription || essayDetail.shortDescription,
+      datePublished: essayDetail.publishDate ? new Date(essayDetail.publishDate).toISOString() : undefined,
+    })
+  );
+  jsonLd.push(
+    buildBreadcrumbLd([
+      { name: "Home", url: siteUrl },
+      { name: "Culture Notes", url: `${siteUrl}/essays` },
+      { name: essayDetail.articleTitle || "Essay", url: canonicalUrl },
+    ])
+  );
 } else if (isAbout) {
   pageName = `About | ${SITE_NAME}`;
   metaDescription = AUTHOR_BIO;
   jsonLd.push(buildPersonLd(siteUrl));
-} else if (isProjects) {
-  pageName = `Projects | ${SITE_NAME}`;
-  metaDescription = 'Building practical tools and applications to apply learning in real-world scenarios.';
-} else if (isProjectDetail && projectDetail) {
-  pageName = projectDetail.projectName || `Project | ${SITE_NAME}`;
-  metaDescription = projectDetail.shortDescription || DEFAULT_DESCRIPTION;
-  ogImage = projectDetail.mainImage;
-  jsonLd.push(
-    buildBreadcrumbLd([
-      { name: "Home", url: siteUrl },
-      { name: "Projects", url: `${siteUrl}/projects` },
-      { name: projectDetail.projectName || "Project", url: canonicalUrl },
-    ])
-  );
 } else if (isStaticArticle) {
   pageName = staticArticle.title;
   metaDescription = staticArticle.metaDescription;
@@ -190,7 +195,7 @@ if (isHome) {
           <nav>
             <a href="/">Home</a>
             <a href="/writing">Writing</a>
-            <a href="/projects">Projects</a>
+            <a href="/essays">Culture Notes</a>
             <a href="/about">About</a>
           </nav>
         </header>
@@ -252,6 +257,43 @@ if (isHome) {
           )
         )}
 
+        {isEssays && (
+          <main>
+            <h1>Culture Notes</h1>
+            <p>Reflective essays on movies and media, viewed through a cultural and ESL lens.</p>
+            {essaysList.length > 0 ? (
+              essaysList.map((essay) => (
+                <article>
+                  <h2><a href={`/essays/${essay.slug || essay._id}`}>{essay.articleTitle}</a></h2>
+                  {essay.topicCategory && <p>{essay.topicCategory}</p>}
+                  <p>{essay.shortDescription}</p>
+                </article>
+              ))
+            ) : (
+              <p>No essays published yet.</p>
+            )}
+          </main>
+        )}
+
+        {isEssayDetail && (
+          essayDetail ? (
+            <main>
+              <article>
+                {essayDetail.topicCategory && <p>{essayDetail.topicCategory}</p>}
+                <h1>{essayDetail.articleTitle}</h1>
+                {essayDetail.shortDescription && <p>{essayDetail.shortDescription}</p>}
+                <div>{essayDetail.mainContent}</div>
+              </article>
+            </main>
+          ) : (
+            <main>
+              <h1>Essay Not Found</h1>
+              <p>The essay you're looking for doesn't exist.</p>
+              <a href="/essays">Back to Culture Notes</a>
+            </main>
+          )
+        )}
+
         {isAbout && (
           <main>
             <h1>About</h1>
@@ -271,43 +313,6 @@ if (isHome) {
               </ul>
             </section>
           </main>
-        )}
-
-        {isProjects && (
-          <main>
-            <h1>Projects</h1>
-            <p>Building practical tools and applications to apply learning in real-world scenarios.</p>
-            {projectsList.length > 0 ? (
-              projectsList.map((project) => (
-                <article>
-                  <h2><a href={`/projects/${project._id}`}>{project.projectName}</a></h2>
-                  {project.projectStatus && <p>{project.projectStatus}</p>}
-                  <p>{project.shortDescription}</p>
-                </article>
-              ))
-            ) : (
-              <p>No projects yet.</p>
-            )}
-          </main>
-        )}
-
-        {isProjectDetail && (
-          projectDetail ? (
-            <main>
-              <article>
-                {projectDetail.projectStatus && <p>{projectDetail.projectStatus}</p>}
-                <h1>{projectDetail.projectName}</h1>
-                {projectDetail.shortDescription && <p>{projectDetail.shortDescription}</p>}
-                <div>{projectDetail.detailedContent}</div>
-                {projectDetail.projectUrl && <a href={projectDetail.projectUrl}>View Project</a>}
-              </article>
-            </main>
-          ) : (
-            <main>
-              <h1>Project Not Found</h1>
-              <a href="/projects">Back to Projects</a>
-            </main>
-          )
         )}
 
         {isStaticArticle && (

@@ -4,10 +4,10 @@ import ErrorPage from '@/integrations/errorHandlers/ErrorPage';
 import HomePage from '@/components/pages/HomePage';
 import WritingPage from '@/components/pages/WritingPage';
 import ArticleDetailPage from '@/components/pages/ArticleDetailPage';
+import EssaysPage from '@/components/pages/EssaysPage';
+import EssayDetailPage from '@/components/pages/EssayDetailPage';
 import AboutPage from '@/components/pages/AboutPage';
 import ArticlePage from '@/components/pages/ArticlePage';
-import ProjectsPage from '@/components/pages/ProjectsPage';
-import ProjectDetailPage from '@/components/pages/ProjectDetailPage';
 import { aiEnglishWeaknessArticle } from '@/data/ai-english-weakness-article';
 
 // Layout component that includes ScrollToTop
@@ -39,6 +39,14 @@ const router = createBrowserRouter([
         element: <ArticleDetailPage />,
       },
       {
+        path: "essays",
+        element: <EssaysPage />,
+      },
+      {
+        path: "essays/:slug",
+        element: <EssayDetailPage />,
+      },
+      {
         // Blog was a duplicate listing of the same articles collection as
         // /writing — canonical index now lives at /writing, old links redirect.
         path: "blog",
@@ -47,14 +55,6 @@ const router = createBrowserRouter([
       {
         path: "about",
         element: <AboutPage />,
-      },
-      {
-        path: "projects",
-        element: <ProjectsPage />,
-      },
-      {
-        path: "projects/:id",
-        element: <ProjectDetailPage />,
       },
       {
         path: aiEnglishWeaknessArticle.path.slice(1),

@@ -31,6 +31,8 @@ export interface Articles {
   shortDescription?: string;
   /** @wixFieldType url */
   videoUrl?: string;
+  /** @wixFieldType text */
+  contentType?: string;
 }
 
 
@@ -73,29 +75,4 @@ export interface LearningProgress {
   targetDate?: Date | string;
   /** @wixFieldType text */
   status?: string;
-}
-
-
-/**
- * Collection ID: projects
- * Interface for Projects
- */
-export interface Projects {
-  _id: string;
-  _createdDate?: Date;
-  _updatedDate?: Date;
-  /** @wixFieldType text */
-  projectName?: string;
-  /** @wixFieldType text */
-  shortDescription?: string;
-  /** @wixFieldType text */
-  detailedContent?: string;
-  /** @wixFieldType text */
-  projectStatus?: string;
-  /** @wixFieldType url */
-  projectUrl?: string;
-  /** @wixFieldType image - Contains image URL, render with <Image> component, NOT as text */
-  mainImage?: string;
-  /** @wixFieldType date */
-  completionDate?: Date | string;
 }
