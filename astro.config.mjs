@@ -5,16 +5,17 @@ import react from "@astrojs/react";
 import vercel from "@astrojs/vercel";
 import customErrorOverlayPlugin from "./vite-error-overlay-plugin.js";
 
-// Absolute site origin used for canonical/OG URLs and the sitemap. Astro.url.origin
-// can't be trusted for this on Vercel's serverless runtime, so we derive it from
-// Vercel's own env vars instead: the production domain in prod, the per-deployment
-// URL in preview builds, and localhost when running `astro dev` outside Vercel.
-const site =
-  process.env.VERCEL_ENV === "production"
-    ? "https://learnledger-green.vercel.app"
-    : process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:4321";
+// Single source of truth for the public domain. Exposed as `site` (Astro.site in
+// pages/endpoints) and used for canonical/OG URLs, JSON-LD, the sitemap and
+// robots.txt. Astro.url.origin can't be trusted for this on Vercel's serverless
+// runtime, which resolves it to "https://localhost".
+export const SITE_URL = "https://learnledgerlab.com";
+
+// Every build — production and Vercel previews alike — canonicalizes to the real
+// domain so preview URLs never compete in search results. Only `astro dev` uses
+// localhost.
+const isDev = process.argv.includes("dev");
+const site = isDev ? "http://localhost:4321" : SITE_URL;
 
 // https://astro.build/config
 export default defineConfig({

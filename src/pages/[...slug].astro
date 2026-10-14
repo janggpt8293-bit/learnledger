@@ -77,7 +77,9 @@ try {
 // to "https://localhost" instead of the real request host. Astro.site (configured in
 // astro.config.mjs from Vercel's own env vars) is the reliable source of truth instead.
 const siteUrl = Astro.site ? Astro.site.origin : Astro.url.origin;
-const canonicalUrl = new URL(Astro.url.pathname + Astro.url.search, siteUrl).href;
+// Built from the normalized `path` (no trailing slash, no query string) so /writing,
+// /writing/ and /writing?utm_source=x all share one canonical URL.
+const canonicalUrl = new URL(path, siteUrl).href;
 const DEFAULT_DESCRIPTION =
   'One person\'s real journey using AI to learn faster, write better, and build skills in a second language — documented in public, article by article.';
 let pageName = SITE_NAME;
