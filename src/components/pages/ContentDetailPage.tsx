@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router';
 import { motion } from 'framer-motion';
 import { BaseCrudService } from '@/integrations';
 import { Articles } from '@/entities';
@@ -19,6 +19,7 @@ import {
 } from '@/lib/articles';
 import { AUTHOR_BIO, AUTHOR_NAME, PAGE_TITLES } from '@/lib/structured-data';
 import { useDocumentTitle } from '@/hooks/use-document-title';
+import { useInitialData } from '@/lib/initial-data';
 
 // Temporary fallback until every article has been given a videoUrl in the CMS.
 const FALLBACK_VIDEO_URLS: Record<string, string> = {
@@ -33,13 +34,24 @@ interface ContentDetailPageProps {
 
 export default function ContentDetailPage({ basePath, backLabel, notFoundLabel }: ContentDetailPageProps) {
   const { slug } = useParams<{ slug: string }>();
-  const [article, setArticle] = useState<Articles | null>(null);
-  const [relatedArticles, setRelatedArticles] = useState<Articles[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Server-fetched item on the first load (so hydration matches); otherwise fetched below.
+  // detail === null means the server already looked it up and it doesn't exist.
+  const initialData = useInitialData();
+  const hasInitialDetail = initialData?.detail !== undefined;
+  const [article, setArticle] = useState<Articles | null>(initialData?.detail ?? null);
+  const [relatedArticles, setRelatedArticles] = useState<Articles[]>(initialData?.related ?? []);
+  const [isLoading, setIsLoading] = useState(!hasInitialDetail);
 
   useDocumentTitle(isLoading ? undefined : article?.articleTitle || PAGE_TITLES.notFound);
 
   useEffect(() => {
+    if (initialData && hasInitialDetail) {
+      // Back on the server-rendered URL (e.g. via the back button): reuse its data.
+      setArticle(initialData.detail ?? null);
+      setRelatedArticles(initialData.related ?? []);
+      setIsLoading(false);
+      return;
+    }
     loadArticle();
   }, [slug]);
 

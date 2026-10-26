@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { motion } from 'framer-motion';
 import { BaseCrudService } from '@/integrations';
 import { Articles } from '@/entities';
@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatStoredDate, getDateKey, getItemPath, sortNewestFirst, splitCategories } from '@/lib/articles';
 import { useDocumentTitle } from '@/hooks/use-document-title';
+import { useInitialData } from '@/lib/initial-data';
 
 interface ContentListPageProps {
   contentType: string;
@@ -18,16 +19,28 @@ interface ContentListPageProps {
   pageTitle: string;
 }
 
+/** Items of one contentType, newest first, plus their filter categories. */
+function prepareList(items: Articles[], contentType: string) {
+  const sorted = sortNewestFirst(items.filter(article => article.contentType === contentType));
+  // "AI, Productivity" counts as two categories: "AI" and "Productivity".
+  const categories = Array.from(new Set(sorted.flatMap(article => splitCategories(article.topicCategory))));
+  return { sorted, categories: ['All', ...categories] };
+}
+
 export default function ContentListPage({ contentType, heading, subheading, emptyText, pageTitle }: ContentListPageProps) {
-  const [articles, setArticles] = useState<Articles[]>([]);
-  const [filteredArticles, setFilteredArticles] = useState<Articles[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Server-fetched items on the first load (so hydration matches); otherwise fetched below.
+  const initialData = useInitialData();
+  const [initialList] = useState(() => prepareList(initialData?.items ?? [], contentType));
+  const [articles, setArticles] = useState<Articles[]>(initialList.sorted);
+  const [filteredArticles, setFilteredArticles] = useState<Articles[]>(initialList.sorted);
+  const [isLoading, setIsLoading] = useState(!initialData?.items);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  const [categories, setCategories] = useState<string[]>(['All']);
+  const [categories, setCategories] = useState<string[]>(initialList.categories);
 
   useDocumentTitle(pageTitle);
 
   useEffect(() => {
+    if (initialData?.items) return;
     loadArticles();
   }, [contentType]);
 
@@ -44,18 +57,11 @@ export default function ContentListPage({ contentType, heading, subheading, empt
   const loadArticles = async () => {
     try {
       const result = await BaseCrudService.getAll<Articles>('articles');
-      const sortedArticles = sortNewestFirst(
-        result.items.filter(article => article.contentType === contentType)
-      );
+      const { sorted, categories: loadedCategories } = prepareList(result.items, contentType);
 
-      setArticles(sortedArticles);
-      setFilteredArticles(sortedArticles);
-
-      // "AI, Productivity" counts as two categories: "AI" and "Productivity".
-      const uniqueCategories = Array.from(
-        new Set(sortedArticles.flatMap(article => splitCategories(article.topicCategory)))
-      );
-      setCategories(['All', ...uniqueCategories]);
+      setArticles(sorted);
+      setFilteredArticles(sorted);
+      setCategories(loadedCategories);
     } catch (error) {
       console.error('Error loading articles:', error);
     } finally {

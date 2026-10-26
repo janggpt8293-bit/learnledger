@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import { BaseCrudService } from '@/integrations';
 import { Articles, ContactSubmissions } from '@/entities';
@@ -20,12 +20,13 @@ import {
 import { START_HERE_COUNT, START_HERE_SLUGS } from '@/config/site';
 import { PAGE_TITLES } from '@/lib/structured-data';
 import { useDocumentTitle } from '@/hooks/use-document-title';
+import { useInitialData } from '@/lib/initial-data';
 
 export default function HomePage() {
-  const [featuredArticles, setFeaturedArticles] = useState<Articles[]>([]);
-  const [latestArticle, setLatestArticle] = useState<Articles | undefined>();
-  const [startHereArticles, setStartHereArticles] = useState<(Articles | undefined)[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Server-fetched items on the first load (so hydration matches); otherwise fetched below.
+  const initialData = useInitialData();
+  const [items, setItems] = useState<Articles[]>(initialData?.items ?? []);
+  const [isLoading, setIsLoading] = useState(!initialData?.items);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -40,24 +41,26 @@ export default function HomePage() {
 
   useDocumentTitle(PAGE_TITLES.home);
 
+  // Articles only (never essays); dates compared as stored YYYY-MM-DD strings.
+  const featuredArticles = getFeaturedArticles(items, 3);
+  const latestArticle = getLatestArticle(items);
   // Only configured slugs that match a published item; unfilled slots are skipped.
-  const startHereList = startHereArticles.filter((article): article is Articles => Boolean(article));
+  const startHereList = pickBySlugs(items, START_HERE_SLUGS.slice(0, START_HERE_COUNT)).filter(
+    (article): article is Articles => Boolean(article)
+  );
   // Section labels stay sequential (01, 02, ...) whether or not Start Here is shown.
   const sectionNumber = (position: number) =>
     String(position + (startHereList.length > 0 ? 1 : 0)).padStart(2, '0');
 
   useEffect(() => {
+    if (initialData?.items) return;
     loadData();
   }, []);
 
   const loadData = async () => {
     try {
       const articlesResult = await BaseCrudService.getAll<Articles>('articles');
-
-      // Articles only (never essays); dates compared as stored YYYY-MM-DD strings.
-      setFeaturedArticles(getFeaturedArticles(articlesResult.items, 3));
-      setLatestArticle(getLatestArticle(articlesResult.items));
-      setStartHereArticles(pickBySlugs(articlesResult.items, START_HERE_SLUGS.slice(0, START_HERE_COUNT)));
+      setItems(articlesResult.items);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -92,7 +95,9 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-primary selection:text-primary-foreground overflow-clip">
-      <style>{`
+      {/* dangerouslySetInnerHTML (not a text child): React escapes quotes in <style>
+          text when server-rendering, which breaks hydration. Same CSS either way. */}
+      <style dangerouslySetInnerHTML={{ __html: `
         .hairline-t { border-top: 1px solid theme('colors.border'); }
         .hairline-b { border-bottom: 1px solid theme('colors.border'); }
         .hairline-l { border-left: 1px solid theme('colors.border'); }
@@ -105,7 +110,7 @@ export default function HomePage() {
             linear-gradient(to bottom, rgba(222, 226, 230, 0.4) 1px, transparent 1px);
           mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
         }
-      `}</style>
+      ` }} />
 
       {/* Global Scroll Progress */}
       <motion.div 

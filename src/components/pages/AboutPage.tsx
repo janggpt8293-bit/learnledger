@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { motion } from 'framer-motion';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
@@ -11,11 +11,20 @@ import { ABOUT_PROFILE, BEST_ARTICLE_SLUGS } from '@/config/site';
 import { formatStoredDate, getDateKey, getItemPath, pickBySlugs } from '@/lib/articles';
 import { PAGE_TITLES } from '@/lib/structured-data';
 import { useDocumentTitle } from '@/hooks/use-document-title';
+import { useInitialData } from '@/lib/initial-data';
 
 const BEST_ARTICLE_COUNT = 3;
 
+/** BEST_ARTICLE_SLUGS that match a published item, in configured order. */
+const pickBestArticles = (items: Articles[]) =>
+  pickBySlugs(items, BEST_ARTICLE_SLUGS.slice(0, BEST_ARTICLE_COUNT)).filter(
+    (article): article is Articles => Boolean(article)
+  );
+
 export default function AboutPage() {
-  const [bestArticles, setBestArticles] = useState<Articles[]>([]);
+  // Server-fetched items on the first load (so hydration matches); otherwise fetched below.
+  const initialData = useInitialData();
+  const [bestArticles, setBestArticles] = useState<Articles[]>(() => pickBestArticles(initialData?.items ?? []));
   const profile = ABOUT_PROFILE;
 
   // Unfilled ABOUT_PROFILE fields are not rendered; the whole profile block is
@@ -32,15 +41,9 @@ export default function AboutPage() {
   useDocumentTitle(PAGE_TITLES.about);
 
   useEffect(() => {
-    if (BEST_ARTICLE_SLUGS.length === 0) return;
+    if (BEST_ARTICLE_SLUGS.length === 0 || initialData?.items) return;
     BaseCrudService.getAll<Articles>('articles')
-      .then((result) =>
-        setBestArticles(
-          pickBySlugs(result.items, BEST_ARTICLE_SLUGS.slice(0, BEST_ARTICLE_COUNT)).filter(
-            (article): article is Articles => Boolean(article)
-          )
-        )
-      )
+      .then((result) => setBestArticles(pickBestArticles(result.items)))
       .catch((error) => console.error('Error loading best articles:', error));
   }, []);
 

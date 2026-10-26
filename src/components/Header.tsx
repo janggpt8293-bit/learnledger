@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router';
 import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import { SITE_NAME } from '@/lib/structured-data';

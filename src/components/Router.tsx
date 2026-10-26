@@ -1,5 +1,15 @@
-import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom';
+import { Component, type ReactNode } from 'react';
+import {
+  BrowserRouter,
+  StaticRouter,
+  Navigate,
+  Outlet,
+  useLocation,
+  useRoutes,
+  type RouteObject,
+} from 'react-router';
 import { ScrollToTop } from '@/lib/scroll-to-top';
+import { InitialDataProvider, type InitialData } from '@/lib/initial-data';
 import ErrorPage from '@/integrations/errorHandlers/ErrorPage';
 import HomePage from '@/components/pages/HomePage';
 import WritingPage from '@/components/pages/WritingPage';
@@ -21,11 +31,10 @@ function Layout() {
   );
 }
 
-const router = createBrowserRouter([
+const routes: RouteObject[] = [
   {
     path: "/",
     element: <Layout />,
-    errorElement: <ErrorPage />,
     children: [
       {
         index: true,
@@ -72,8 +81,57 @@ const router = createBrowserRouter([
       },
     ],
   },
-]);
+];
 
-export default function AppRouter() {
-  return <RouterProvider router={router} />;
+/**
+ * Stands in for the data router's errorElement, which isn't available with
+ * StaticRouter/BrowserRouter. Clears itself when the URL changes.
+ */
+class RouteErrorBoundary extends Component<{ pathname: string; children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidUpdate(prevProps: { pathname: string }) {
+    if (this.state.error && prevProps.pathname !== this.props.pathname) {
+      this.setState({ error: null });
+    }
+  }
+
+  render() {
+    return this.state.error ? <ErrorPage error={this.state.error} /> : this.props.children;
+  }
+}
+
+function AppRoutes() {
+  const { pathname } = useLocation();
+  const element = useRoutes(routes);
+  return <RouteErrorBoundary pathname={pathname}>{element}</RouteErrorBoundary>;
+}
+
+interface AppRouterProps {
+  /** Request URL (path + query) — used for server rendering. */
+  url?: string;
+  /** CMS data the server fetched for `url`. */
+  initialData?: InitialData | null;
+}
+
+/**
+ * Rendered on the server (StaticRouter) and then hydrated in the browser
+ * (BrowserRouter). Both render the same route tree, so the markup matches.
+ */
+export default function AppRouter({ url = '/', initialData = null }: AppRouterProps) {
+  const app = (
+    <InitialDataProvider value={initialData}>
+      <AppRoutes />
+    </InitialDataProvider>
+  );
+
+  return typeof window === 'undefined' ? (
+    <StaticRouter location={url}>{app}</StaticRouter>
+  ) : (
+    <BrowserRouter>{app}</BrowserRouter>
+  );
 }

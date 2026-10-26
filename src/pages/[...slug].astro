@@ -6,7 +6,6 @@ import type { Articles } from "@/entities";
 import { aiEnglishWeaknessArticle as staticArticle } from "@/data/ai-english-weakness-article";
 import {
   SITE_NAME,
-  AUTHOR_NAME,
   AUTHOR_BIO,
   PAGE_TITLES,
   buildArticleLd,
@@ -19,25 +18,14 @@ import {
 import {
   MIN_FAQ_ITEMS,
   extractFaq,
-  formatStoredDate,
   getDateKey,
-  getFeaturedArticles,
   getItemPath,
-  getLatestArticle,
   getRelatedArticles,
   isArticle,
   isEssay,
-  parseArticleBody,
-  pickBySlugs,
-  sortNewestFirst,
 } from "@/lib/articles";
-import {
-  ABOUT_PROFILE,
-  BEST_ARTICLE_SLUGS,
-  DEFAULT_OG_IMAGE,
-  START_HERE_COUNT,
-  START_HERE_SLUGS,
-} from "@/config/site";
+import { ABOUT_PROFILE, BEST_ARTICLE_SLUGS, DEFAULT_OG_IMAGE } from "@/config/site";
+import type { InitialData } from "@/lib/initial-data";
 import "@/styles/global.css";
 
 const path = Astro.url.pathname.replace(/\/+$/, "") || "/";
@@ -98,16 +86,21 @@ if (isNotFound) {
   Astro.response.status = fetchFailed ? 503 : 404;
 }
 
-const featuredArticles = getFeaturedArticles(allItems, 3);
-const latestArticle = getLatestArticle(allItems);
-const startHereItems = isHome ? pickBySlugs(allItems, START_HERE_SLUGS.slice(0, START_HERE_COUNT)) : [];
-const bestArticles = isAbout ? pickBySlugs(allItems, BEST_ARTICLE_SLUGS.slice(0, 3)).filter(Boolean) : [];
-const writingArticles = sortNewestFirst(allItems.filter(isArticle));
-const essaysList = sortNewestFirst(allItems.filter(isEssay));
 const relatedArticles = articleDetail ? getRelatedArticles(allItems, articleDetail, 3) : [];
 const detailItem = articleDetail ?? essayDetail;
-const detailBlocks = detailItem ? parseArticleBody(detailItem.mainContent) : [];
 const detailFaq = detailItem ? extractFaq(detailItem.mainContent) : [];
+
+// --- Data handed to the React app so its first render matches this server render ---
+// Listings don't render mainContent, so it's dropped to keep the serialized props small.
+const withoutBody = (items: Articles[]) => items.map(({ mainContent: _mainContent, ...rest }) => rest);
+let initialData: InitialData | null = null;
+if (!fetchFailed) {
+  if (isHome || isWriting || isEssays || isAbout) {
+    initialData = { path, items: withoutBody(allItems) };
+  } else if (isArticleDetail || isEssayDetail) {
+    initialData = { path, detail, related: withoutBody(relatedArticles) };
+  }
+}
 
 // --- Per-route SEO page name + JSON-LD (rendered server-side, always crawlable) ---
 // Astro.url.origin can't be trusted here — Vercel's serverless runtime resolves it
@@ -222,213 +215,21 @@ const isArticleType = Boolean(detailItem) || isStaticArticle;
     {jsonLd.map((entry) => (
       <script type="application/ld+json" set:html={serializeJsonLd(entry)} />
     ))}
+    <!--
+      Entrance animations server-render with inline opacity:0 / translate until
+      JavaScript animates them in. Without JavaScript, show that content as-is.
+    -->
+    <noscript><style>[style*="opacity:0"]{opacity:1!important;transform:none!important}</style></noscript>
   </head>
   <body class="w-full h-full">
     <div id="root" class="w-full h-full">
       <!--
-        Crawlable fallback: the interactive app below mounts with client:only
-        (react-router's createBrowserRouter needs a real browser and can't be
-        server-rendered), so anything that doesn't execute JavaScript — most
-        AI/GEO crawlers included — would otherwise see an empty page. This
-        block renders the same content as plain server-rendered HTML. It's
-        wrapped in <noscript> so JS-enabled visitors never see it; the React
-        app replaces #root's contents on mount either way.
+        The app is server-rendered here, so crawlers that don't run JavaScript
+        get the full page content as normal HTML. It is then hydrated in the
+        browser, where navigation continues client-side. initialData is the CMS
+        data fetched above, so the first browser render matches this HTML.
       -->
-      <noscript>
-        <header>
-          <a href="/">{SITE_NAME}</a>
-          <nav>
-            <a href="/">Home</a>
-            <a href="/writing">Writing</a>
-            <a href="/essays">Culture Notes</a>
-            <a href="/about">About</a>
-          </nav>
-        </header>
-
-        {isHome && (
-          <main>
-            <h1>Learning in public. Building with data. Thinking through systems.</h1>
-            <p>Exploring AI, analytics, and learning systems while documenting the journey publicly.</p>
-            {startHereItems.some(Boolean) && (
-              <section>
-                <h2>Start Here</h2>
-                <ol>
-                  {startHereItems.filter(Boolean).map((article) => (
-                    <li><a href={getItemPath(article!)}>{article!.articleTitle}</a></li>
-                  ))}
-                </ol>
-              </section>
-            )}
-            <section>
-              <h2>Featured Writing</h2>
-              {featuredArticles.length > 0 ? (
-                featuredArticles.map((article) => (
-                  <article>
-                    <h3><a href={getItemPath(article)}>{article.articleTitle}</a></h3>
-                    <p><time datetime={getDateKey(article.publishDate)}>{formatStoredDate(article.publishDate)}</time></p>
-                    <p>{article.shortDescription}</p>
-                  </article>
-                ))
-              ) : (
-                <p>No featured articles yet.</p>
-              )}
-            </section>
-            {latestArticle && (
-              <section>
-                <h2>Latest Article</h2>
-                <article>
-                  <h3><a href={getItemPath(latestArticle)}>{latestArticle.articleTitle}</a></h3>
-                  <p><time datetime={getDateKey(latestArticle.publishDate)}>{formatStoredDate(latestArticle.publishDate)}</time></p>
-                  <p>{latestArticle.shortDescription}</p>
-                </article>
-              </section>
-            )}
-          </main>
-        )}
-
-        {(isWriting || isEssays) && (
-          <main>
-            <h1>{isWriting ? "Writing" : "Culture Notes"}</h1>
-            <p>{isWriting
-              ? "Thoughts on AI and analytics. Documenting the journey of continuous learning."
-              : "Reflective essays on movies and media, viewed through a cultural and ESL lens."}</p>
-            {(isWriting ? writingArticles : essaysList).length > 0 ? (
-              (isWriting ? writingArticles : essaysList).map((article) => (
-                <article>
-                  <h2><a href={getItemPath(article)}>{article.articleTitle}</a></h2>
-                  {article.topicCategory && <p>{article.topicCategory}</p>}
-                  <p><time datetime={getDateKey(article.publishDate)}>{formatStoredDate(article.publishDate)}</time></p>
-                  <p>{article.shortDescription}</p>
-                </article>
-              ))
-            ) : (
-              <p>{isWriting ? "No articles published yet." : "No essays published yet."}</p>
-            )}
-          </main>
-        )}
-
-        {detailItem && (
-          <main>
-            <article>
-              {detailItem.topicCategory && <p>{detailItem.topicCategory}</p>}
-              <h1>{detailItem.articleTitle}</h1>
-              <p>By {AUTHOR_NAME} — <time datetime={getDateKey(detailItem.publishDate)}>{formatStoredDate(detailItem.publishDate, "long")}</time></p>
-              {detailItem.shortDescription && <p>{detailItem.shortDescription}</p>}
-              {detailBlocks.map((block) =>
-                block.type === "heading" ? (
-                  <h2>{block.text}</h2>
-                ) : block.type === "paragraph" ? (
-                  <p>{block.text}</p>
-                ) : (
-                  <section>
-                    <h2>{block.heading}</h2>
-                    {block.items.map((item) => (
-                      <div>
-                        <h3>{item.question}</h3>
-                        <p>{item.answer}</p>
-                      </div>
-                    ))}
-                  </section>
-                )
-              )}
-            </article>
-            {relatedArticles.length > 0 && (
-              <section>
-                <h2>Related articles</h2>
-                <ul>
-                  {relatedArticles.map((article) => (
-                    <li><a href={getItemPath(article)}>{article.articleTitle}</a></li>
-                  ))}
-                </ul>
-              </section>
-            )}
-          </main>
-        )}
-
-        {isNotFound && (
-          <main>
-            <h1>Page Not Found</h1>
-            <p>The page you're looking for doesn't exist.</p>
-            <a href="/writing">Back to Writing</a>
-          </main>
-        )}
-
-        {isAbout && (
-          <main>
-            <h1>About</h1>
-            <p>A student on a long-term journey to build expertise in AI, analytics, and analytical thinking.</p>
-            {ABOUT_PROFILE.name && <h2>{ABOUT_PROFILE.name}</h2>}
-            {ABOUT_PROFILE.shortBio && <p>{ABOUT_PROFILE.shortBio}</p>}
-            {(ABOUT_PROFILE.school || ABOUT_PROFILE.major) && (
-              <p>{[ABOUT_PROFILE.major, ABOUT_PROFILE.school].filter(Boolean).join(", ")}</p>
-            )}
-            {ABOUT_PROFILE.email && <p><a href={`mailto:${ABOUT_PROFILE.email}`}>{ABOUT_PROFILE.email}</a></p>}
-            {ABOUT_PROFILE.linkedinUrl && <p><a href={ABOUT_PROFILE.linkedinUrl}>LinkedIn</a></p>}
-            <section>
-              <h2>The Journey</h2>
-              <p>This website exists to document a long-term learning journey. It's not about claiming expertise or selling a product. It's about building skills systematically, thinking deeply, and sharing the process publicly.</p>
-              <p>I'm a student focused on developing capabilities in artificial intelligence and data analytics. The goal is to understand these domains deeply, build practical projects, and document insights along the way.</p>
-            </section>
-            <section>
-              <h2>Guiding Principles</h2>
-              <ul>
-                <li><strong>Learn in Public</strong> — Documenting the journey, sharing insights, and building a body of work that tracks growth over time.</li>
-                <li><strong>Build to Understand</strong> — Creating projects and tools to apply theoretical knowledge in practical, real-world scenarios.</li>
-                <li><strong>Think Through Systems</strong> — Approaching problems analytically, breaking down complexity, and finding patterns across domains.</li>
-                <li><strong>Stay Curious</strong> — Maintaining intellectual curiosity, asking questions, and pursuing understanding beyond surface-level knowledge.</li>
-              </ul>
-            </section>
-            {bestArticles.length > 0 && (
-              <section>
-                <h2>Best 3 Articles</h2>
-                <ul>
-                  {bestArticles.map((article) => (
-                    <li><a href={getItemPath(article!)}>{article!.articleTitle}</a></li>
-                  ))}
-                </ul>
-              </section>
-            )}
-          </main>
-        )}
-
-        {isStaticArticle && (
-          <main>
-            <article>
-              <p>{staticArticle.category}</p>
-              <h1>{staticArticle.title}</h1>
-              <p>{staticArticle.subheadline}</p>
-              <p>By {staticArticle.author} — <time datetime={staticArticle.datePublished}>{formatStoredDate(staticArticle.datePublished, "long")}</time> — {staticArticle.readingTime}</p>
-
-              {staticArticle.sections.map((section) => (
-                <section>
-                  <h2>{section.title}</h2>
-                  {section.paragraphs.map((paragraph) => (
-                    <p set:html={paragraph} />
-                  ))}
-                  {section.quote && <blockquote>{section.quote}</blockquote>}
-                </section>
-              ))}
-
-              <section>
-                <h2>Frequently Asked Questions</h2>
-                {staticArticle.faqItems.map((item) => (
-                  <div>
-                    <h3>{item.question}</h3>
-                    <p>{item.answer}</p>
-                  </div>
-                ))}
-              </section>
-
-              <p>Written by {staticArticle.author}. {staticArticle.authorBio}</p>
-            </article>
-          </main>
-        )}
-
-        <footer>
-          <p>&copy; {new Date().getFullYear()} {SITE_NAME}. Documenting the journey of continuous learning in AI and analytics.</p>
-        </footer>
-      </noscript>
-      <AppRouter client:only="react" />
+      <AppRouter client:load url={Astro.url.pathname + Astro.url.search} initialData={initialData} />
     </div>
   </body>
 </html>

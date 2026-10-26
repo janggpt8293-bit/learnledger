@@ -1,10 +1,9 @@
-import { useRouteError } from "react-router";
 import { useEffect, useRef } from "react";
-import { ErrorOverlay } from "../../vite-error-overlay-plugin";
 
-export default function ErrorPage() {
+// Receives the error from the router's error boundary (src/components/Router.tsx);
+// useRouteError() only works with a data router, which can't be server-rendered here.
+export default function ErrorPage({ error }: { error: Error }) {
   const ref = useRef<HTMLDivElement>(null);
-  const error = useRouteError() as Error;
 
   useEffect(() => {
     if (ref.current) {
