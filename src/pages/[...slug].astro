@@ -6,13 +6,38 @@ import type { Articles } from "@/entities";
 import { aiEnglishWeaknessArticle as staticArticle } from "@/data/ai-english-weakness-article";
 import {
   SITE_NAME,
+  AUTHOR_NAME,
   AUTHOR_BIO,
+  PAGE_TITLES,
   buildArticleLd,
   buildBreadcrumbLd,
   buildFaqLd,
   buildPersonLd,
   buildWebsiteLd,
+  serializeJsonLd,
 } from "@/lib/structured-data";
+import {
+  MIN_FAQ_ITEMS,
+  extractFaq,
+  formatStoredDate,
+  getDateKey,
+  getFeaturedArticles,
+  getItemPath,
+  getLatestArticle,
+  getRelatedArticles,
+  isArticle,
+  isEssay,
+  parseArticleBody,
+  pickBySlugs,
+  sortNewestFirst,
+} from "@/lib/articles";
+import {
+  ABOUT_PROFILE,
+  BEST_ARTICLE_SLUGS,
+  DEFAULT_OG_IMAGE,
+  START_HERE_COUNT,
+  START_HERE_SLUGS,
+} from "@/config/site";
 import "@/styles/global.css";
 
 const path = Astro.url.pathname.replace(/\/+$/, "") || "/";
@@ -34,43 +59,55 @@ const isEssayDetail = segments[0] === "essays" && segments.length === 2;
 const isAbout = path === "/about";
 const isStaticArticle = path === staticArticle.path;
 
-// --- Server-side data fetch (same collections/sorting as the matching React page) ---
-let featuredArticles: Articles[] = [];
-let writingArticles: Articles[] = [];
-let articleDetail: Articles | null = null;
-let essaysList: Articles[] = [];
-let essayDetail: Articles | null = null;
+// --- Server-side data fetch (same helpers as the matching React page) ---
+let allItems: Articles[] = [];
+let detail: Articles | null = null;
+let fetchFailed = false;
 
 try {
-  if (isHome || isWriting || isEssays) {
+  if (isHome || isWriting || isEssays || (isAbout && BEST_ARTICLE_SLUGS.length > 0)) {
     const result = await BaseCrudService.getAll<Articles>("articles", undefined, { limit: 100 });
-    const sorted = result.items.sort((a, b) => {
-      const dateA = a.publishDate ? new Date(a.publishDate).getTime() : 0;
-      const dateB = b.publishDate ? new Date(b.publishDate).getTime() : 0;
-      return dateB - dateA;
-    });
-    if (isHome) {
-      featuredArticles = sorted.filter((article) => article.isFeatured).slice(0, 3);
-      if (featuredArticles.length === 0) featuredArticles = sorted.slice(0, 3);
-    } else if (isWriting) {
-      writingArticles = sorted.filter((article) => article.contentType === "article");
-    } else {
-      essaysList = sorted.filter((article) => article.contentType === "essay");
-    }
+    allItems = result.items;
   } else if (isArticleDetail || isEssayDetail) {
     const slug = segments[1];
-    const detail =
+    detail =
       (await BaseCrudService.getByField<Articles>("articles", "slug", slug)) ??
       (await BaseCrudService.getById<Articles>("articles", slug));
-    if (isArticleDetail) {
-      articleDetail = detail;
-    } else {
-      essayDetail = detail;
+    if (detail && isArticle(detail)) {
+      const result = await BaseCrudService.getAll<Articles>("articles", undefined, { limit: 100 });
+      allItems = result.items;
     }
   }
 } catch (error) {
+  fetchFailed = true;
   console.error("Error fetching content for", path, error);
 }
+
+// An essay requested under /writing (or an article under /essays) moves to its own section.
+if (detail && ((isArticleDetail && isEssay(detail)) || (isEssayDetail && !isEssay(detail)))) {
+  return Astro.redirect(getItemPath(detail), 301);
+}
+
+const articleDetail = isArticleDetail ? detail : null;
+const essayDetail = isEssayDetail ? detail : null;
+const isKnownRoute =
+  isHome || isWriting || isEssays || isAbout || isStaticArticle || Boolean(articleDetail) || Boolean(essayDetail);
+const isNotFound = !isKnownRoute;
+if (isNotFound) {
+  // A failed CMS call is temporary (503); anything else genuinely doesn't exist (404).
+  Astro.response.status = fetchFailed ? 503 : 404;
+}
+
+const featuredArticles = getFeaturedArticles(allItems, 3);
+const latestArticle = getLatestArticle(allItems);
+const startHereItems = isHome ? pickBySlugs(allItems, START_HERE_SLUGS.slice(0, START_HERE_COUNT)) : [];
+const bestArticles = isAbout ? pickBySlugs(allItems, BEST_ARTICLE_SLUGS.slice(0, 3)).filter(Boolean) : [];
+const writingArticles = sortNewestFirst(allItems.filter(isArticle));
+const essaysList = sortNewestFirst(allItems.filter(isEssay));
+const relatedArticles = articleDetail ? getRelatedArticles(allItems, articleDetail, 3) : [];
+const detailItem = articleDetail ?? essayDetail;
+const detailBlocks = detailItem ? parseArticleBody(detailItem.mainContent) : [];
+const detailFaq = detailItem ? extractFaq(detailItem.mainContent) : [];
 
 // --- Per-route SEO page name + JSON-LD (rendered server-side, always crawlable) ---
 // Astro.url.origin can't be trusted here — Vercel's serverless runtime resolves it
@@ -82,82 +119,85 @@ const siteUrl = Astro.site ? Astro.site.origin : Astro.url.origin;
 const canonicalUrl = new URL(path, siteUrl).href;
 const DEFAULT_DESCRIPTION =
   'One person\'s real journey using AI to learn faster, write better, and build skills in a second language — documented in public, article by article.';
-let pageName = SITE_NAME;
+let pageName = PAGE_TITLES.home;
 let metaDescription: string = DEFAULT_DESCRIPTION;
 let ogImage: string | undefined;
 const jsonLd: Record<string, unknown>[] = [buildWebsiteLd(siteUrl)];
+const homeCrumb = { name: "Home", url: siteUrl };
 
 if (isHome) {
-  pageName = `${SITE_NAME} — Learning in Public`;
+  pageName = PAGE_TITLES.home;
 } else if (isWriting) {
-  pageName = `Writing | ${SITE_NAME}`;
+  pageName = PAGE_TITLES.writing;
   metaDescription = 'Thoughts on AI and analytics. Documenting the journey of continuous learning.';
-} else if (isArticleDetail && articleDetail) {
-  pageName = articleDetail.articleTitle || `Article | ${SITE_NAME}`;
-  metaDescription = articleDetail.metaDescription || articleDetail.shortDescription || DEFAULT_DESCRIPTION;
+  jsonLd.push(buildBreadcrumbLd([homeCrumb, { name: "Writing", url: canonicalUrl }]));
+} else if (detailItem) {
+  const sectionCrumb = articleDetail
+    ? { name: "Writing", url: `${siteUrl}/writing` }
+    : { name: "Culture Notes", url: `${siteUrl}/essays` };
+  pageName = detailItem.articleTitle || `${articleDetail ? "Article" : "Essay"} | ${SITE_NAME}`;
+  metaDescription = detailItem.metaDescription || detailItem.shortDescription || DEFAULT_DESCRIPTION;
   jsonLd.push(
     buildArticleLd({
+      siteUrl,
       url: canonicalUrl,
-      headline: articleDetail.articleTitle || pageName,
-      description: articleDetail.metaDescription || articleDetail.shortDescription,
-      datePublished: articleDetail.publishDate ? new Date(articleDetail.publishDate).toISOString() : undefined,
+      headline: detailItem.articleTitle || pageName,
+      description: detailItem.metaDescription || detailItem.shortDescription,
+      datePublished: getDateKey(detailItem.publishDate),
+      dateModified: getDateKey(detailItem._updatedDate),
+      keywords: detailItem.tags,
+      articleSection: detailItem.topicCategory,
     })
   );
+  if (detailFaq.length >= MIN_FAQ_ITEMS) {
+    jsonLd.push(buildFaqLd(detailFaq));
+  }
   jsonLd.push(
-    buildBreadcrumbLd([
-      { name: "Home", url: siteUrl },
-      { name: "Writing", url: `${siteUrl}/writing` },
-      { name: articleDetail.articleTitle || "Article", url: canonicalUrl },
-    ])
+    buildBreadcrumbLd([homeCrumb, sectionCrumb, { name: detailItem.articleTitle || "Article", url: canonicalUrl }])
   );
 } else if (isEssays) {
-  pageName = `Culture Notes | ${SITE_NAME}`;
+  pageName = PAGE_TITLES.essays;
   metaDescription = 'Reflective essays on movies and media, viewed through a cultural and ESL lens.';
-} else if (isEssayDetail && essayDetail) {
-  pageName = essayDetail.articleTitle || `Essay | ${SITE_NAME}`;
-  metaDescription = essayDetail.metaDescription || essayDetail.shortDescription || DEFAULT_DESCRIPTION;
-  jsonLd.push(
-    buildArticleLd({
-      url: canonicalUrl,
-      headline: essayDetail.articleTitle || pageName,
-      description: essayDetail.metaDescription || essayDetail.shortDescription,
-      datePublished: essayDetail.publishDate ? new Date(essayDetail.publishDate).toISOString() : undefined,
-    })
-  );
-  jsonLd.push(
-    buildBreadcrumbLd([
-      { name: "Home", url: siteUrl },
-      { name: "Culture Notes", url: `${siteUrl}/essays` },
-      { name: essayDetail.articleTitle || "Essay", url: canonicalUrl },
-    ])
-  );
+  jsonLd.push(buildBreadcrumbLd([homeCrumb, { name: "Culture Notes", url: canonicalUrl }]));
 } else if (isAbout) {
-  pageName = `About | ${SITE_NAME}`;
-  metaDescription = AUTHOR_BIO;
+  pageName = PAGE_TITLES.about;
+  metaDescription = ABOUT_PROFILE.shortBio || AUTHOR_BIO;
   jsonLd.push(buildPersonLd(siteUrl));
+  jsonLd.push(buildBreadcrumbLd([homeCrumb, { name: "About", url: canonicalUrl }]));
 } else if (isStaticArticle) {
   pageName = staticArticle.title;
   metaDescription = staticArticle.metaDescription;
   ogImage = staticArticle.image;
   jsonLd.push(
     buildArticleLd({
+      siteUrl,
       url: canonicalUrl,
       headline: staticArticle.title,
       description: staticArticle.metaDescription,
       image: staticArticle.image,
       datePublished: staticArticle.datePublished,
       authorName: staticArticle.author,
+      keywords: staticArticle.keywords,
+      articleSection: staticArticle.category,
     })
   );
   jsonLd.push(buildFaqLd(staticArticle.faqItems));
   jsonLd.push(
     buildBreadcrumbLd([
-      { name: "Home", url: siteUrl },
+      homeCrumb,
       { name: "Writing", url: `${siteUrl}/writing` },
       { name: staticArticle.title, url: canonicalUrl },
     ])
   );
+} else if (isNotFound) {
+  pageName = PAGE_TITLES.notFound;
+  metaDescription = "The page you're looking for doesn't exist.";
+  jsonLd.length = 0;
 }
+
+const resolvedOgImage = ogImage ?? DEFAULT_OG_IMAGE;
+const ogImageUrl = resolvedOgImage ? new URL(resolvedOgImage, siteUrl).href : undefined;
+const isArticleType = Boolean(detailItem) || isStaticArticle;
 ---
 
 <html lang="en" class="w-full h-full">
@@ -165,19 +205,22 @@ if (isHome) {
     <Head />
     <title>{pageName}</title>
     <meta name="description" content={metaDescription} />
-    <link rel="canonical" href={canonicalUrl} />
-    <meta property="og:type" content={isArticleDetail || isStaticArticle ? "article" : "website"} />
+    {isNotFound ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonicalUrl} />}
+    <meta property="og:type" content={isArticleType ? "article" : "website"} />
     <meta property="og:site_name" content={SITE_NAME} />
     <meta property="og:title" content={pageName} />
     <meta property="og:description" content={metaDescription} />
-    <meta property="og:url" content={canonicalUrl} />
-    {ogImage && <meta property="og:image" content={ogImage} />}
-    <meta name="twitter:card" content={ogImage ? "summary_large_image" : "summary"} />
+    {!isNotFound && <meta property="og:url" content={canonicalUrl} />}
+    {ogImageUrl && <meta property="og:image" content={ogImageUrl} />}
+    {detailItem && getDateKey(detailItem.publishDate) && (
+      <meta property="article:published_time" content={getDateKey(detailItem.publishDate)} />
+    )}
+    <meta name="twitter:card" content={ogImageUrl ? "summary_large_image" : "summary"} />
     <meta name="twitter:title" content={pageName} />
     <meta name="twitter:description" content={metaDescription} />
-    {ogImage && <meta name="twitter:image" content={ogImage} />}
+    {ogImageUrl && <meta name="twitter:image" content={ogImageUrl} />}
     {jsonLd.map((entry) => (
-      <script type="application/ld+json" set:html={JSON.stringify(entry)} />
+      <script type="application/ld+json" set:html={serializeJsonLd(entry)} />
     ))}
   </head>
   <body class="w-full h-full">
@@ -206,12 +249,23 @@ if (isHome) {
           <main>
             <h1>Learning in public. Building with data. Thinking through systems.</h1>
             <p>Exploring AI, analytics, and learning systems while documenting the journey publicly.</p>
+            {startHereItems.some(Boolean) && (
+              <section>
+                <h2>Start Here</h2>
+                <ol>
+                  {startHereItems.filter(Boolean).map((article) => (
+                    <li><a href={getItemPath(article!)}>{article!.articleTitle}</a></li>
+                  ))}
+                </ol>
+              </section>
+            )}
             <section>
               <h2>Featured Writing</h2>
               {featuredArticles.length > 0 ? (
                 featuredArticles.map((article) => (
                   <article>
-                    <h3><a href={`/writing/${article.slug || article._id}`}>{article.articleTitle}</a></h3>
+                    <h3><a href={getItemPath(article)}>{article.articleTitle}</a></h3>
+                    <p><time datetime={getDateKey(article.publishDate)}>{formatStoredDate(article.publishDate)}</time></p>
                     <p>{article.shortDescription}</p>
                   </article>
                 ))
@@ -219,87 +273,97 @@ if (isHome) {
                 <p>No featured articles yet.</p>
               )}
             </section>
+            {latestArticle && (
+              <section>
+                <h2>Latest Article</h2>
+                <article>
+                  <h3><a href={getItemPath(latestArticle)}>{latestArticle.articleTitle}</a></h3>
+                  <p><time datetime={getDateKey(latestArticle.publishDate)}>{formatStoredDate(latestArticle.publishDate)}</time></p>
+                  <p>{latestArticle.shortDescription}</p>
+                </article>
+              </section>
+            )}
           </main>
         )}
 
-        {isWriting && (
+        {(isWriting || isEssays) && (
           <main>
-            <h1>Writing</h1>
-            <p>Thoughts on AI and analytics. Documenting the journey of continuous learning.</p>
-            {writingArticles.length > 0 ? (
-              writingArticles.map((article) => (
+            <h1>{isWriting ? "Writing" : "Culture Notes"}</h1>
+            <p>{isWriting
+              ? "Thoughts on AI and analytics. Documenting the journey of continuous learning."
+              : "Reflective essays on movies and media, viewed through a cultural and ESL lens."}</p>
+            {(isWriting ? writingArticles : essaysList).length > 0 ? (
+              (isWriting ? writingArticles : essaysList).map((article) => (
                 <article>
-                  <h2><a href={`/writing/${article.slug || article._id}`}>{article.articleTitle}</a></h2>
+                  <h2><a href={getItemPath(article)}>{article.articleTitle}</a></h2>
                   {article.topicCategory && <p>{article.topicCategory}</p>}
+                  <p><time datetime={getDateKey(article.publishDate)}>{formatStoredDate(article.publishDate)}</time></p>
                   <p>{article.shortDescription}</p>
                 </article>
               ))
             ) : (
-              <p>No articles published yet.</p>
+              <p>{isWriting ? "No articles published yet." : "No essays published yet."}</p>
             )}
           </main>
         )}
 
-        {isArticleDetail && (
-          articleDetail ? (
-            <main>
-              <article>
-                {articleDetail.topicCategory && <p>{articleDetail.topicCategory}</p>}
-                <h1>{articleDetail.articleTitle}</h1>
-                {articleDetail.shortDescription && <p>{articleDetail.shortDescription}</p>}
-                <div>{articleDetail.mainContent}</div>
-              </article>
-            </main>
-          ) : (
-            <main>
-              <h1>Article Not Found</h1>
-              <p>The article you're looking for doesn't exist.</p>
-              <a href="/writing">Back to Writing</a>
-            </main>
-          )
-        )}
-
-        {isEssays && (
+        {detailItem && (
           <main>
-            <h1>Culture Notes</h1>
-            <p>Reflective essays on movies and media, viewed through a cultural and ESL lens.</p>
-            {essaysList.length > 0 ? (
-              essaysList.map((essay) => (
-                <article>
-                  <h2><a href={`/essays/${essay.slug || essay._id}`}>{essay.articleTitle}</a></h2>
-                  {essay.topicCategory && <p>{essay.topicCategory}</p>}
-                  <p>{essay.shortDescription}</p>
-                </article>
-              ))
-            ) : (
-              <p>No essays published yet.</p>
+            <article>
+              {detailItem.topicCategory && <p>{detailItem.topicCategory}</p>}
+              <h1>{detailItem.articleTitle}</h1>
+              <p>By {AUTHOR_NAME} — <time datetime={getDateKey(detailItem.publishDate)}>{formatStoredDate(detailItem.publishDate, "long")}</time></p>
+              {detailItem.shortDescription && <p>{detailItem.shortDescription}</p>}
+              {detailBlocks.map((block) =>
+                block.type === "heading" ? (
+                  <h2>{block.text}</h2>
+                ) : block.type === "paragraph" ? (
+                  <p>{block.text}</p>
+                ) : (
+                  <section>
+                    <h2>{block.heading}</h2>
+                    {block.items.map((item) => (
+                      <div>
+                        <h3>{item.question}</h3>
+                        <p>{item.answer}</p>
+                      </div>
+                    ))}
+                  </section>
+                )
+              )}
+            </article>
+            {relatedArticles.length > 0 && (
+              <section>
+                <h2>Related articles</h2>
+                <ul>
+                  {relatedArticles.map((article) => (
+                    <li><a href={getItemPath(article)}>{article.articleTitle}</a></li>
+                  ))}
+                </ul>
+              </section>
             )}
           </main>
         )}
 
-        {isEssayDetail && (
-          essayDetail ? (
-            <main>
-              <article>
-                {essayDetail.topicCategory && <p>{essayDetail.topicCategory}</p>}
-                <h1>{essayDetail.articleTitle}</h1>
-                {essayDetail.shortDescription && <p>{essayDetail.shortDescription}</p>}
-                <div>{essayDetail.mainContent}</div>
-              </article>
-            </main>
-          ) : (
-            <main>
-              <h1>Essay Not Found</h1>
-              <p>The essay you're looking for doesn't exist.</p>
-              <a href="/essays">Back to Culture Notes</a>
-            </main>
-          )
+        {isNotFound && (
+          <main>
+            <h1>Page Not Found</h1>
+            <p>The page you're looking for doesn't exist.</p>
+            <a href="/writing">Back to Writing</a>
+          </main>
         )}
 
         {isAbout && (
           <main>
             <h1>About</h1>
             <p>A student on a long-term journey to build expertise in AI, analytics, and analytical thinking.</p>
+            {ABOUT_PROFILE.name && <h2>{ABOUT_PROFILE.name}</h2>}
+            {ABOUT_PROFILE.shortBio && <p>{ABOUT_PROFILE.shortBio}</p>}
+            {(ABOUT_PROFILE.school || ABOUT_PROFILE.major) && (
+              <p>{[ABOUT_PROFILE.major, ABOUT_PROFILE.school].filter(Boolean).join(", ")}</p>
+            )}
+            {ABOUT_PROFILE.email && <p><a href={`mailto:${ABOUT_PROFILE.email}`}>{ABOUT_PROFILE.email}</a></p>}
+            {ABOUT_PROFILE.linkedinUrl && <p><a href={ABOUT_PROFILE.linkedinUrl}>LinkedIn</a></p>}
             <section>
               <h2>The Journey</h2>
               <p>This website exists to document a long-term learning journey. It's not about claiming expertise or selling a product. It's about building skills systematically, thinking deeply, and sharing the process publicly.</p>
@@ -314,6 +378,16 @@ if (isHome) {
                 <li><strong>Stay Curious</strong> — Maintaining intellectual curiosity, asking questions, and pursuing understanding beyond surface-level knowledge.</li>
               </ul>
             </section>
+            {bestArticles.length > 0 && (
+              <section>
+                <h2>Best 3 Articles</h2>
+                <ul>
+                  {bestArticles.map((article) => (
+                    <li><a href={getItemPath(article!)}>{article!.articleTitle}</a></li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </main>
         )}
 
@@ -323,7 +397,7 @@ if (isHome) {
               <p>{staticArticle.category}</p>
               <h1>{staticArticle.title}</h1>
               <p>{staticArticle.subheadline}</p>
-              <p>By {staticArticle.author} — <time datetime={staticArticle.datePublished}>{staticArticle.datePublished}</time> — {staticArticle.readingTime}</p>
+              <p>By {staticArticle.author} — <time datetime={staticArticle.datePublished}>{formatStoredDate(staticArticle.datePublished, "long")}</time> — {staticArticle.readingTime}</p>
 
               {staticArticle.sections.map((section) => (
                 <section>

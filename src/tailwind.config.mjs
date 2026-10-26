@@ -19,8 +19,8 @@ export default {
                 '9xl': ['8rem', { lineHeight: '1', letterSpacing: '0', fontWeight: '700' }],
             },
             fontFamily: {
-                heading: "helvetica-w01-roman",
-                paragraph: "helvetica-w01-roman"
+                heading: ["helvetica-w01-roman", "Helvetica", "Arial", "sans-serif"],
+                paragraph: ["helvetica-w01-roman", "Helvetica", "Arial", "sans-serif"]
             },
             colors: {
                 destructive: '#dc3545',
@@ -32,7 +32,8 @@ export default {
                 foreground: '#212529',
                 'secondary-foreground': '#FFFFFF',
                 'primary-foreground': '#FFFFFF',
-                primary: '#007AFF'
+                // #0066CC = 5.6:1 on white (WCAG AA for small text); was #007AFF (4.0:1).
+                primary: '#0066CC'
             },
         },
     },

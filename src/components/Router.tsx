@@ -8,6 +8,7 @@ import EssaysPage from '@/components/pages/EssaysPage';
 import EssayDetailPage from '@/components/pages/EssayDetailPage';
 import AboutPage from '@/components/pages/AboutPage';
 import ArticlePage from '@/components/pages/ArticlePage';
+import NotFoundPage from '@/components/pages/NotFoundPage';
 import { aiEnglishWeaknessArticle } from '@/data/ai-english-weakness-article';
 
 // Layout component that includes ScrollToTop
@@ -67,7 +68,7 @@ const router = createBrowserRouter([
       },
       {
         path: "*",
-        element: <Navigate to="/" replace />,
+        element: <NotFoundPage />,
       },
     ],
   },

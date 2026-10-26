@@ -8,9 +8,9 @@ export default function Footer() {
       <div className="max-w-[100rem] mx-auto px-8 py-12">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
           <div>
-            <h3 className="font-heading text-xl font-bold text-foreground mb-2">
+            <p className="font-heading text-xl font-bold text-foreground mb-2">
               {SITE_NAME}
-            </h3>
+            </p>
             <p className="font-paragraph text-sm text-secondary max-w-md">
               Documenting the journey of continuous learning in AI and analytics.
             </p>

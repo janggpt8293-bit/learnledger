@@ -1,9 +1,49 @@
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Card } from '@/components/ui/card';
+import { Image } from '@/components/ui/image';
+import { BaseCrudService } from '@/integrations';
+import { Articles } from '@/entities';
+import { ABOUT_PROFILE, BEST_ARTICLE_SLUGS } from '@/config/site';
+import { formatStoredDate, getDateKey, getItemPath, pickBySlugs } from '@/lib/articles';
+import { PAGE_TITLES } from '@/lib/structured-data';
+import { useDocumentTitle } from '@/hooks/use-document-title';
+
+const BEST_ARTICLE_COUNT = 3;
 
 export default function AboutPage() {
+  const [bestArticles, setBestArticles] = useState<Articles[]>([]);
+  const profile = ABOUT_PROFILE;
+
+  // Unfilled ABOUT_PROFILE fields are not rendered; the whole profile block is
+  // hidden until at least one field is filled in.
+  const details = [
+    { label: 'School', value: profile.school },
+    { label: 'Major', value: profile.major },
+  ].filter((detail) => detail.value);
+  const hasContact = Boolean(profile.email || profile.linkedinUrl);
+  const hasProfile = Boolean(
+    profile.name || profile.shortBio || profile.photoUrl || details.length > 0 || hasContact
+  );
+
+  useDocumentTitle(PAGE_TITLES.about);
+
+  useEffect(() => {
+    if (BEST_ARTICLE_SLUGS.length === 0) return;
+    BaseCrudService.getAll<Articles>('articles')
+      .then((result) =>
+        setBestArticles(
+          pickBySlugs(result.items, BEST_ARTICLE_SLUGS.slice(0, BEST_ARTICLE_COUNT)).filter(
+            (article): article is Articles => Boolean(article)
+          )
+        )
+      )
+      .catch((error) => console.error('Error loading best articles:', error));
+  }, []);
+
   const skills = [
     'AI & Prompt Engineering',
     'ESL & Language Learning',
@@ -34,8 +74,8 @@ export default function AboutPage() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
-      <div className="w-full max-w-[100rem] mx-auto px-8 py-20">
+
+      <div className="w-full max-w-[100rem] mx-auto px-6 md:px-8 py-20">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -47,6 +87,76 @@ export default function AboutPage() {
           <p className="font-paragraph text-xl text-secondary max-w-3xl mb-16">
             A student on a long-term journey to build expertise in AI, analytics, and analytical thinking.
           </p>
+
+          {/* Profile — from ABOUT_PROFILE in src/config/site.ts.
+              TODO: fill in name, shortBio, school, major, photoUrl/photoAlt, email, linkedinUrl.
+              Each field (and this whole block) stays hidden until it has a value. */}
+          {hasProfile && (
+            <section className="mb-20" aria-label="Profile">
+              <div className={`grid grid-cols-1 gap-8 md:gap-12 max-w-5xl items-start ${profile.photoUrl ? 'md:grid-cols-[16rem_1fr]' : ''}`}>
+                {profile.photoUrl && (
+                  <Image
+                    src={profile.photoUrl}
+                    alt={profile.photoAlt || profile.name || 'Profile photo'}
+                    width={256}
+                    height={256}
+                    loading="lazy"
+                    className="w-48 h-48 md:w-64 md:h-64 object-cover border border-border"
+                  />
+                )}
+
+                <div className="space-y-6">
+                  {profile.name && (
+                    <h2 className="font-heading text-3xl md:text-4xl font-semibold text-foreground">
+                      {profile.name}
+                    </h2>
+                  )}
+
+                  {profile.shortBio && (
+                    <p className="font-paragraph text-lg text-foreground leading-relaxed max-w-2xl">
+                      {profile.shortBio}
+                    </p>
+                  )}
+
+                  {(details.length > 0 || hasContact) && (
+                    <dl className="grid grid-cols-1 sm:grid-cols-[8rem_1fr] gap-x-6 gap-y-3 font-paragraph text-base">
+                      {details.map((detail) => (
+                        <div key={detail.label} className="contents">
+                          <dt className="font-medium text-secondary">{detail.label}</dt>
+                          <dd className="text-foreground">{detail.value}</dd>
+                        </div>
+                      ))}
+                      {profile.email && (
+                        <>
+                          <dt className="font-medium text-secondary">Email</dt>
+                          <dd className="text-foreground">
+                            <a href={`mailto:${profile.email}`} className="text-primary underline underline-offset-4">
+                              {profile.email}
+                            </a>
+                          </dd>
+                        </>
+                      )}
+                      {profile.linkedinUrl && (
+                        <>
+                          <dt className="font-medium text-secondary">LinkedIn</dt>
+                          <dd className="text-foreground">
+                            <a
+                              href={profile.linkedinUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary underline underline-offset-4"
+                            >
+                              LinkedIn profile
+                            </a>
+                          </dd>
+                        </>
+                      )}
+                    </dl>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* Bio Section */}
           <section className="mb-20">
@@ -70,6 +180,38 @@ export default function AboutPage() {
               </div>
             </div>
           </section>
+
+          {/* Best 3 Articles — slugs from BEST_ARTICLE_SLUGS in src/config/site.ts.
+              TODO: add your 3 slugs. Hidden until at least one slug matches a published item. */}
+          {bestArticles.length > 0 && (
+            <section className="mb-20" aria-labelledby="best-articles-heading">
+              <h2 id="best-articles-heading" className="font-heading text-3xl md:text-4xl font-semibold text-foreground mb-8">
+                Best 3 Articles
+              </h2>
+              <ol className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl">
+                {bestArticles.map((article) => (
+                  <li key={article._id}>
+                    <Link
+                      to={getItemPath(article)}
+                      className="group flex flex-col h-full p-6 border border-border hover:border-primary/50 transition-colors"
+                    >
+                      <span className="text-xs font-medium text-primary uppercase tracking-wider mb-3">
+                        {article.topicCategory}
+                      </span>
+                      <h3 className="font-heading text-xl font-semibold text-foreground mb-3 group-hover:text-primary transition-colors">
+                        {article.articleTitle}
+                      </h3>
+                      {article.publishDate && (
+                        <time dateTime={getDateKey(article.publishDate)} className="text-xs text-muted-foreground mt-auto">
+                          {formatStoredDate(article.publishDate)}
+                        </time>
+                      )}
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
 
           {/* Skills Section */}
           <section className="mb-20">

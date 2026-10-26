@@ -51,6 +51,8 @@ export default function Header() {
             className="md:hidden text-foreground"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="Toggle menu"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-nav"
           >
             {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
@@ -58,7 +60,7 @@ export default function Header() {
 
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
-          <nav className="md:hidden mt-6 pb-4 flex flex-col gap-4">
+          <nav id="mobile-nav" className="md:hidden mt-6 pb-4 flex flex-col gap-4">
             {navLinks.map((link) => (
               <Link
                 key={link.path}

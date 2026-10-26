@@ -4,8 +4,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { aiEnglishWeaknessArticle as article } from '@/data/ai-english-weakness-article';
+import { formatStoredDate } from '@/lib/articles';
+import { useDocumentTitle } from '@/hooks/use-document-title';
 
 const ArticlePage = () => {
+  useDocumentTitle(article.title);
   const [activeSection, setActiveSection] = useState('');
   const [isSticky, setIsSticky] = useState(false);
 
@@ -59,7 +62,7 @@ const ArticlePage = () => {
             <span className="font-medium">{article.author}</span>
             <span className="hidden md:inline">•</span>
             <time dateTime={article.datePublished}>
-              {new Date(article.datePublished).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+              {formatStoredDate(article.datePublished, 'long')}
             </time>
             <span className="hidden md:inline">•</span>
             <span>{article.readingTime}</span>
@@ -77,10 +80,10 @@ const ArticlePage = () => {
             {/* Table of Contents Sidebar */}
             <aside className={`lg:col-span-1 ${isSticky ? 'lg:sticky lg:top-20 lg:h-fit' : ''}`}>
               <div className="hidden lg:block">
-                <h3 className="font-heading text-sm font-semibold uppercase tracking-wide text-foreground mb-6">
+                <p className="font-heading text-sm font-semibold uppercase tracking-wide text-foreground mb-6">
                   Contents
-                </h3>
-                <nav className="space-y-3">
+                </p>
+                <nav className="space-y-3" aria-label="Table of contents">
                   {tableOfContents.map((item) => (
                     <button
                       key={item.id}

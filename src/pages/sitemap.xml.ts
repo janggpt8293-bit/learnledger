@@ -2,8 +2,9 @@ import type { APIRoute } from "astro";
 import { BaseCrudService } from "@/integrations";
 import type { Articles } from "@/entities";
 import { aiEnglishWeaknessArticle } from "@/data/ai-english-weakness-article";
+import { getDateKey, getItemPath } from "@/lib/articles";
 
-const STATIC_ROUTES = ["/", "/writing", "/essays", "/about", aiEnglishWeaknessArticle.path];
+const STATIC_ROUTES = ["/", "/writing", "/essays", "/about"];
 
 function urlEntry(loc: string, lastmod?: string) {
   return `  <url>\n    <loc>${loc}</loc>\n${lastmod ? `    <lastmod>${lastmod}</lastmod>\n` : ""}  </url>`;
@@ -14,14 +15,14 @@ export const GET: APIRoute = async ({ url, site }) => {
   // Vercel's serverless runtime, so prefer the configured `site` origin instead.
   const siteUrl = site ? site.origin : url.origin;
   const entries = STATIC_ROUTES.map((route) => urlEntry(`${siteUrl}${route}`));
+  entries.push(urlEntry(`${siteUrl}${aiEnglishWeaknessArticle.path}`, aiEnglishWeaknessArticle.datePublished));
 
   try {
     const articles = await BaseCrudService.getAll<Articles>("articles", undefined, { limit: 1000 });
     for (const article of articles.items) {
-      const slug = article.slug || article._id;
-      const lastmod = article._updatedDate ? new Date(article._updatedDate).toISOString() : undefined;
-      const basePath = article.contentType === "essay" ? "/essays" : "/writing";
-      entries.push(urlEntry(`${siteUrl}${basePath}/${slug}`, lastmod));
+      // publishDate exactly as stored (YYYY-MM-DD) — no timezone conversion.
+      const lastmod = getDateKey(article.publishDate) ?? getDateKey(article._updatedDate);
+      entries.push(urlEntry(`${siteUrl}${getItemPath(article)}`, lastmod));
     }
   } catch (error) {
     console.error("Error building sitemap entries for articles:", error);

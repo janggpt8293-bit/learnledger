@@ -7,22 +7,25 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { format } from 'date-fns';
+import { formatStoredDate, getDateKey, getItemPath, sortNewestFirst, splitCategories } from '@/lib/articles';
+import { useDocumentTitle } from '@/hooks/use-document-title';
 
 interface ContentListPageProps {
   contentType: string;
-  basePath: string;
   heading: string;
   subheading: string;
   emptyText: string;
+  pageTitle: string;
 }
 
-export default function ContentListPage({ contentType, basePath, heading, subheading, emptyText }: ContentListPageProps) {
+export default function ContentListPage({ contentType, heading, subheading, emptyText, pageTitle }: ContentListPageProps) {
   const [articles, setArticles] = useState<Articles[]>([]);
   const [filteredArticles, setFilteredArticles] = useState<Articles[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [categories, setCategories] = useState<string[]>(['All']);
+
+  useDocumentTitle(pageTitle);
 
   useEffect(() => {
     loadArticles();
@@ -32,27 +35,26 @@ export default function ContentListPage({ contentType, basePath, heading, subhea
     if (selectedCategory === 'All') {
       setFilteredArticles(articles);
     } else {
-      setFilteredArticles(articles.filter(article => article.topicCategory === selectedCategory));
+      setFilteredArticles(
+        articles.filter(article => splitCategories(article.topicCategory).includes(selectedCategory))
+      );
     }
   }, [selectedCategory, articles]);
 
   const loadArticles = async () => {
     try {
       const result = await BaseCrudService.getAll<Articles>('articles');
-      const sortedArticles = result.items
-        .filter(article => article.contentType === contentType)
-        .sort((a, b) => {
-          const dateA = a.publishDate ? new Date(a.publishDate).getTime() : 0;
-          const dateB = b.publishDate ? new Date(b.publishDate).getTime() : 0;
-          return dateB - dateA;
-        });
+      const sortedArticles = sortNewestFirst(
+        result.items.filter(article => article.contentType === contentType)
+      );
 
       setArticles(sortedArticles);
       setFilteredArticles(sortedArticles);
 
+      // "AI, Productivity" counts as two categories: "AI" and "Productivity".
       const uniqueCategories = Array.from(
-        new Set(sortedArticles.map(article => article.topicCategory).filter(Boolean))
-      ) as string[];
+        new Set(sortedArticles.flatMap(article => splitCategories(article.topicCategory)))
+      );
       setCategories(['All', ...uniqueCategories]);
     } catch (error) {
       console.error('Error loading articles:', error);
@@ -65,7 +67,7 @@ export default function ContentListPage({ contentType, basePath, heading, subhea
     <div className="min-h-screen bg-background">
       <Header />
 
-      <div className="w-full max-w-[100rem] mx-auto px-8 py-20">
+      <div className="w-full max-w-[100rem] mx-auto px-6 md:px-8 py-20">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -79,12 +81,13 @@ export default function ContentListPage({ contentType, basePath, heading, subhea
           </p>
 
           {/* Category Filter */}
-          <div className="flex flex-wrap gap-3 mb-12">
+          <div className="flex flex-wrap gap-3 mb-12" role="group" aria-label="Filter by category">
             {categories.map((category) => (
               <Button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
                 variant={selectedCategory === category ? 'default' : 'outline'}
+                aria-pressed={selectedCategory === category}
                 className={`rounded-md px-6 py-2 text-sm font-medium ${
                   selectedCategory === category
                     ? 'bg-primary text-primary-foreground hover:bg-primary/90'
@@ -107,16 +110,16 @@ export default function ContentListPage({ contentType, basePath, heading, subhea
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5, delay: index * 0.05 }}
                   >
-                    <Link to={`${basePath}/${article.slug || article._id}`}>
+                    <Link to={getItemPath(article)}>
                       <Card className="p-8 border border-border bg-background hover:border-primary/50 transition-colors h-full flex flex-col">
-                        <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center justify-between gap-4 mb-4">
                           <span className="text-xs font-medium text-primary uppercase tracking-wider">
                             {article.topicCategory}
                           </span>
                           {article.publishDate && (
-                            <span className="text-xs text-muted-foreground">
-                              {format(new Date(article.publishDate), 'MMM d, yyyy')}
-                            </span>
+                            <time dateTime={getDateKey(article.publishDate)} className="text-xs text-muted-foreground shrink-0">
+                              {formatStoredDate(article.publishDate)}
+                            </time>
                           )}
                         </div>
                         <h2 className="font-heading text-xl font-semibold text-foreground mb-4">

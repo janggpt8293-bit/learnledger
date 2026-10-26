@@ -9,9 +9,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowRight, ArrowUpRight, Mail } from 'lucide-react';
+import {
+  formatStoredDate,
+  getDateKey,
+  getFeaturedArticles,
+  getItemPath,
+  getLatestArticle,
+  pickBySlugs,
+} from '@/lib/articles';
+import { START_HERE_COUNT, START_HERE_SLUGS } from '@/config/site';
+import { PAGE_TITLES } from '@/lib/structured-data';
+import { useDocumentTitle } from '@/hooks/use-document-title';
 
 export default function HomePage() {
   const [featuredArticles, setFeaturedArticles] = useState<Articles[]>([]);
+  const [latestArticle, setLatestArticle] = useState<Articles | undefined>();
+  const [startHereArticles, setStartHereArticles] = useState<(Articles | undefined)[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
@@ -25,6 +38,14 @@ export default function HomePage() {
   const { scrollYProgress } = useScroll();
   const headerOpacity = useTransform(scrollYProgress, [0, 0.05], [1, 0]);
 
+  useDocumentTitle(PAGE_TITLES.home);
+
+  // Only configured slugs that match a published item; unfilled slots are skipped.
+  const startHereList = startHereArticles.filter((article): article is Articles => Boolean(article));
+  // Section labels stay sequential (01, 02, ...) whether or not Start Here is shown.
+  const sectionNumber = (position: number) =>
+    String(position + (startHereList.length > 0 ? 1 : 0)).padStart(2, '0');
+
   useEffect(() => {
     loadData();
   }, []);
@@ -33,11 +54,10 @@ export default function HomePage() {
     try {
       const articlesResult = await BaseCrudService.getAll<Articles>('articles');
 
-      const featured = articlesResult.items
-        .filter(article => article.isFeatured)
-        .slice(0, 3);
-      
-      setFeaturedArticles(featured);
+      // Articles only (never essays); dates compared as stored YYYY-MM-DD strings.
+      setFeaturedArticles(getFeaturedArticles(articlesResult.items, 3));
+      setLatestArticle(getLatestArticle(articlesResult.items));
+      setStartHereArticles(pickBySlugs(articlesResult.items, START_HERE_SLUGS.slice(0, START_HERE_COUNT)));
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -143,6 +163,41 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Start Here - hand-picked reading order from START_HERE_SLUGS in src/config/site.ts.
+          Hidden until at least one configured slug matches a published item. */}
+      {startHereList.length > 0 && (
+        <section className="w-full hairline-t bg-background relative z-20" aria-labelledby="start-here-heading">
+          <div className="w-full max-w-[120rem] mx-auto px-6 md:px-12 py-24">
+            <span className="text-xs font-medium text-secondary uppercase tracking-widest mb-4 block">01</span>
+            <h2 id="start-here-heading" className="font-heading text-4xl md:text-5xl font-semibold mb-6">Start Here</h2>
+            {/* TODO: optional — replace this intro with your own sentence about the reading order. */}
+            <p className="font-paragraph text-secondary mb-12 max-w-2xl">
+              New here? Read these in order.
+            </p>
+            <ol className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {startHereList.map((article, index) => (
+                <li key={article._id}>
+                  <Link
+                    to={getItemPath(article)}
+                    className="group flex flex-col h-full p-8 border border-border hover:border-primary hover:bg-secondary/5 transition-all"
+                  >
+                    <span className="text-xs font-medium text-secondary uppercase tracking-widest mb-4">
+                      Step {index + 1}
+                    </span>
+                    <h3 className="font-heading text-2xl font-semibold mb-4 group-hover:text-primary transition-colors">
+                      {article.articleTitle}
+                    </h3>
+                    <p className="font-paragraph text-secondary line-clamp-3">
+                      {article.shortDescription}
+                    </p>
+                  </Link>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+      )}
+
       {/* Featured Writing - Sticky Layout */}
       <section className="w-full hairline-t bg-background relative z-20">
         <div className="w-full max-w-[120rem] mx-auto">
@@ -157,7 +212,7 @@ export default function HomePage() {
                   viewport={{ once: true }}
                   transition={{ duration: 0.6 }}
                 >
-                  <span className="text-xs font-medium text-secondary uppercase tracking-widest mb-4 block">01</span>
+                  <span className="text-xs font-medium text-secondary uppercase tracking-widest mb-4 block">{sectionNumber(1)}</span>
                   <h2 className="font-heading text-4xl md:text-5xl font-semibold mb-8">Featured Writing</h2>
                   <p className="font-paragraph text-secondary mb-12 max-w-sm">
                     Documenting observations, systems, and analytical approaches to continuous learning.
@@ -186,14 +241,14 @@ export default function HomePage() {
                       transition={{ duration: 0.6 }}
                       className={`group block p-6 md:p-12 hover:bg-secondary/5 transition-colors ${index !== featuredArticles.length - 1 ? 'hairline-b' : ''}`}
                     >
-                      <Link to={`/writing/${article.slug || article._id}`} className="block h-full">
+                      <Link to={getItemPath(article)} className="block h-full">
                         <div className="flex flex-col md:flex-row md:items-baseline justify-between mb-4 gap-4">
                           <div className="text-xs font-medium text-primary uppercase tracking-wider">
                             {article.topicCategory || 'Uncategorized'}
                           </div>
-                          <div className="text-sm text-secondary font-mono">
-                            {article.publishDate ? new Date(article.publishDate).toLocaleDateString() : 'Recent'}
-                          </div>
+                          <time dateTime={getDateKey(article.publishDate)} className="text-sm text-secondary font-mono">
+                            {formatStoredDate(article.publishDate) ?? 'Recent'}
+                          </time>
                         </div>
                         <h3 className="font-heading text-2xl md:text-3xl font-semibold mb-4 group-hover:text-primary transition-colors flex items-center gap-3">
                           {article.articleTitle}
@@ -227,26 +282,26 @@ export default function HomePage() {
             <span className="text-xs font-medium text-secondary uppercase tracking-widest mb-4 block">Latest Article</span>
             <h2 className="font-heading text-4xl md:text-5xl font-semibold mb-12">Recent Writing</h2>
 
-            {!isLoading && featuredArticles.length > 0 && (
+            {!isLoading && latestArticle && (
               <div className="max-w-2xl">
-                <Link to={`/writing/${featuredArticles[0].slug || featuredArticles[0]._id}`}>
+                <Link to={getItemPath(latestArticle)}>
                   <div className="group block p-8 border border-border bg-background hover:border-primary hover:bg-secondary/5 transition-all">
-                    {featuredArticles[0].topicCategory && (
+                    {latestArticle.topicCategory && (
                       <p className="text-xs font-medium text-primary uppercase tracking-wider mb-3">
-                        {featuredArticles[0].topicCategory}
+                        {latestArticle.topicCategory}
                       </p>
                     )}
                     <h3 className="font-heading text-3xl font-semibold text-foreground mb-4 group-hover:text-primary transition-colors flex items-center gap-3">
-                      {featuredArticles[0].articleTitle}
+                      {latestArticle.articleTitle}
                       <ArrowUpRight className="w-5 h-5 opacity-0 -translate-y-1 translate-x-1 group-hover:opacity-100 group-hover:translate-y-0 group-hover:translate-x-0 transition-all" />
                     </h3>
                     <p className="font-paragraph text-lg text-secondary mb-6">
-                      {featuredArticles[0].shortDescription}
+                      {latestArticle.shortDescription}
                     </p>
                     <div className="flex items-center gap-4">
-                      <span className="text-sm text-secondary font-mono">
-                        {featuredArticles[0].publishDate ? new Date(featuredArticles[0].publishDate).toLocaleDateString() : 'Recent'}
-                      </span>
+                      <time dateTime={getDateKey(latestArticle.publishDate)} className="text-sm text-secondary font-mono">
+                        {formatStoredDate(latestArticle.publishDate) ?? 'Recent'}
+                      </time>
                       <Button variant="ghost" className="p-0 hover:bg-transparent text-primary hover:text-primary/80 group font-medium">
                         Read More <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
                       </Button>
@@ -271,7 +326,7 @@ export default function HomePage() {
                 viewport={{ once: true }}
                 transition={{ duration: 0.6 }}
               >
-                <span className="text-xs font-medium text-secondary uppercase tracking-widest mb-4 block">05</span>
+                <span className="text-xs font-medium text-secondary uppercase tracking-widest mb-4 block">{sectionNumber(2)}</span>
                 <h2 className="font-heading text-5xl md:text-6xl font-bold mb-6">Get in Touch</h2>
                 <p className="font-paragraph text-xl text-secondary max-w-md mb-12">
                   Open to discussions on data, learning systems, or potential collaborations.
@@ -297,40 +352,50 @@ export default function HomePage() {
                     <Input
                       type="text"
                       placeholder="Name"
+                      aria-label="Name"
+                      name="name"
+                      autoComplete="name"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       required
-                      className="w-full px-0 py-4 border-0 hairline-b rounded-none bg-transparent focus-visible:ring-0 focus-visible:border-primary text-lg placeholder:text-secondary/50 transition-colors"
+                      className="w-full px-0 py-4 border-0 hairline-b rounded-none bg-transparent focus-visible:ring-0 focus-visible:border-primary text-lg placeholder:text-secondary transition-colors"
                     />
                   </div>
                   <div className="relative">
                     <Input
                       type="email"
                       placeholder="Email"
+                      aria-label="Email"
+                      name="email"
+                      autoComplete="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       required
-                      className="w-full px-0 py-4 border-0 hairline-b rounded-none bg-transparent focus-visible:ring-0 focus-visible:border-primary text-lg placeholder:text-secondary/50 transition-colors"
+                      className="w-full px-0 py-4 border-0 hairline-b rounded-none bg-transparent focus-visible:ring-0 focus-visible:border-primary text-lg placeholder:text-secondary transition-colors"
                     />
                   </div>
                   <div className="relative">
                     <Input
                       type="text"
                       placeholder="Subject"
+                      aria-label="Subject"
+                      name="subject"
                       value={formData.subject}
                       onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                       required
-                      className="w-full px-0 py-4 border-0 hairline-b rounded-none bg-transparent focus-visible:ring-0 focus-visible:border-primary text-lg placeholder:text-secondary/50 transition-colors"
+                      className="w-full px-0 py-4 border-0 hairline-b rounded-none bg-transparent focus-visible:ring-0 focus-visible:border-primary text-lg placeholder:text-secondary transition-colors"
                     />
                   </div>
                   <div className="relative">
                     <Textarea
                       placeholder="Message"
+                      aria-label="Message"
+                      name="message"
                       value={formData.message}
                       onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                       required
                       rows={4}
-                      className="w-full px-0 py-4 border-0 hairline-b rounded-none bg-transparent focus-visible:ring-0 focus-visible:border-primary text-lg placeholder:text-secondary/50 resize-none transition-colors"
+                      className="w-full px-0 py-4 border-0 hairline-b rounded-none bg-transparent focus-visible:ring-0 focus-visible:border-primary text-lg placeholder:text-secondary resize-none transition-colors"
                     />
                   </div>
                 </div>
